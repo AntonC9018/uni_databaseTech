@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Data;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -13,7 +14,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Lab1.DataLayer;
 using Microsoft.Data.SqlClient;
-using Microsoft.Toolkit.Mvvm.ComponentModel;
 
 namespace Laborator1;
 
@@ -23,31 +23,34 @@ public sealed class MainMenuModel : ObservableObject
 
 }
 
-public sealed partial class RowModel : ObservableObject
+public sealed partial class ColumnModel : ObservableObject
 {
-    public ColumnModel Schema;
+    public ColumnSchema Schema;
 
     [ObservableProperty]
-    private readonly string _value;
+    private readonly string _value = "";
 }
 
 public sealed class TableSchemaViewModel
 {
-    public string Name { get; }
-    public ColumnModel[] Columns { get; set; }
-    public IEnumerable<ColumnModel> IdColumns => Columns.Where(c => c.IsId);
-    public string Schema { get; set; }
+    public required string Name { get; init; }
+    public required ColumnSchema[] Columns { get; init; }
+    public IEnumerable<ColumnSchema> IdColumns => Columns.Where(c => c.IsId);
+    public required string Schema { get; init; }
 }
 
-public sealed partial class RowViewModel : ObservableObject
+public sealed partial class ColumnViewModel : ObservableObject
 {
-    public RowViewModel(RowModel model) => _model = model;
+    public ColumnViewModel(ColumnModel model)
+    {
+        _model = model;
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Name))]
     [NotifyPropertyChangedFor(nameof(Value))]
     [NotifyPropertyChangedFor(nameof(IsReadOnly))]
-    private readonly RowModel _model;
+    private readonly ColumnModel _model;
 
     public string Name => Model.Schema.Name;
 
@@ -62,13 +65,21 @@ public sealed partial class RowViewModel : ObservableObject
 
 public sealed partial class MainMenuViewModel : ObservableObject
 {
-    public MainMenuViewModel(TableSchemaViewModel[] tableModels)
+    public MainMenuViewModel(
+        TableSchemaViewModel[] tableModels,
+        SqlConnection connection,
+        CancellationToken applicationCancellationToken)
     {
         _tableModels = tableModels;
+        _connection = connection;
+        _applicationCancellationToken = applicationCancellationToken;
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(applicationCancellationToken);
+        _loadingCancellationToken = _cts.Token;
     }
 
     private readonly TableSchemaViewModel[] _tableModels;
-    private readonly ObservableCollection<RowViewModel> _rows = new();
+    private readonly ObservableCollection<ColumnViewModel> _columns = new();
+    private readonly SqlConnection _connection;
 
     [ObservableProperty]
     private int? _currentTableSchemaIndex = null;
@@ -89,96 +100,160 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isLoading;
+
+    private CancellationToken _applicationCancellationToken;
     private CancellationToken _loadingCancellationToken;
     private CancellationTokenSource _cts;
-    private SemaphoreSlim _loadingOperationLock = new SemaphoreSlim(1, 1);
+    private readonly SemaphoreSlim _loadingOperationLock = new(1, 1);
 
     public bool CanMovePreviousRow => !IsFirstRow && !IsLoading;
     public bool CanMoveNextRow => !IsFirstRow && !IsLoading;
     public bool IsTableSelected => CurrentTableSchemaIndex is not null;
 
+    private int GetOffsetCurrentIndexWithFallback(int offset)
+    {
+        int? maybeCurrentRowIndex = CurrentTableRowIndex;
+        int rowIndex;
+        if (maybeCurrentRowIndex is null)
+            rowIndex = 0;
+        else
+            rowIndex = maybeCurrentRowIndex.Value + offset;
+        return rowIndex;
+    }
 
     [RelayCommand]
     public void MovePreviousRow()
     {
         if (!CanMovePreviousRow)
             return;
+
+        int rowIndex = GetOffsetCurrentIndexWithFallback(-1);
+        MoveToRowFireAndForget(rowIndex);
     }
-
-    private static async Task MovePreviousRow(
-        SqlConnection connection,
-        MainMenuViewModel model)
-    {
-        int? maybeSchemaIndex = model.CurrentTableSchemaIndex;
-        Debug.Assert(maybeSchemaIndex is not null);
-        int schemaIndex = maybeSchemaIndex.Value;
-
-        int? maybeCurrentRowIndex = model.CurrentTableRowIndex;
-        Debug.Assert(maybeCurrentRowIndex is not null);
-        int currentRowIndex = maybeCurrentRowIndex.Value;
-
-        var table = model._tableModels[schemaIndex];
-        var command = connection.CreateCommand();
-        var stringBuilder = new StringBuilder();
-        GetRowAtIndexQuery(stringBuilder, table);
-        command.CommandText = stringBuilder.ToString();
-        var currentIndexParameter = new SqlParameter(CurrentIndexParameterName, SqlDbType.Int);
-        currentIndexParameter.Value = (object) currentRowIndex;
-        command.Parameters.Add(currentIndexParameter);
-
-        var reader = await command.ExecuteReaderAsync();
-
-
-    }
-
-    const string CurrentIndexParameterName = "currentIndex";
-
-    public static void GetRowAtIndexQuery(
-        StringBuilder sb,
-        TableSchemaViewModel tableSchema)
-    {
-        sb.Append("""
-        SELECT TOP(1) FROM (
-            SELECT 
-                t.*, 
-                row_number() over (partition by
-        """);
-        AppendIdPropertiesAsList();
-        sb.Append(") as rowNumberXXX");
-        sb.AppendLine($"""
-            FROM {tableSchema.Schema}.[{tableSchema.Name}] AS t
-            ORDER BY
-        """);
-        AppendIdPropertiesAsList();
-        sb.Append($"""
-        ) AS t1           
-        WHERE t1.rowNumberXXX >= @{CurrentIndexParameterName}
-        """);
-
-        void AppendIdPropertiesAsList()
-        {
-            bool isFirstAppend = true;
-            foreach (var columnSchema in tableSchema.IdColumns)
-            {
-                if (!isFirstAppend)
-                {
-                    sb.Append(", ");
-                }
-                else
-                {
-                    isFirstAppend = true;
-                }
-                sb.Append($"t.[{columnSchema.Name}]");
-            }
-        }
-    }
-
-
 
     [RelayCommand]
     public void MoveNextRow()
     {
+        if (!CanMoveNextRow)
+            return;
 
+        int rowIndex = GetOffsetCurrentIndexWithFallback(1);
+        MoveToRowFireAndForget(rowIndex);
+    }
+
+
+    private async void MoveToRowFireAndForget(int rowIndex)
+    {
+        try
+        {
+            await _loadingOperationLock.WaitAsync(_loadingCancellationToken);
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        try
+        {
+            IsLoading = true;
+
+            try
+            {
+                bool moved = await MoveToRow(_connection, this, rowIndex);
+                if (!moved)
+                {
+                    MessageBox.Show($"No such row {moved}");
+                }
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show(e.Message);
+            }
+
+            IsLoading = false;
+        }
+        finally
+        {
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(_applicationCancellationToken);
+            _loadingCancellationToken = _cts.Token;
+            _loadingOperationLock.Release();
+        }
+    }
+
+    private async Task<bool> MoveToRow(int rowIndex)
+    {
+        int? maybeSchemaIndex = CurrentTableSchemaIndex;
+        Debug.Assert(maybeSchemaIndex is not null);
+        int schemaIndex = maybeSchemaIndex.Value;
+
+        var table = _tableModels[schemaIndex];
+        var command = _connection.CreateCommand();
+        {
+            var stringBuilder = new StringBuilder();
+            QueryBuilderHelper.GetRowAtIndexQuery(stringBuilder, table);
+            command.CommandText = stringBuilder.ToString();
+        }
+        var currentIndexParameter = new SqlParameter(QueryBuilderHelper.CurrentIndexParameterName, SqlDbType.Int)
+        {
+            Value = (object) rowIndex,
+        };
+        command.Parameters.Add(currentIndexParameter);
+
+        var reader = await command.ExecuteReaderAsync(_loadingCancellationToken);
+        bool rowFound = await reader.ReadAsync(_loadingCancellationToken);
+        if (!rowFound)
+            return false;
+
+        var columns = table.Columns;
+        Debug.Assert(reader.FieldCount == columns.Length);
+        Debug.Assert(columns.Length == _columns.Count);
+
+        var modelColumns = _columns;
+        for (int i = modelColumns.Count - 1; i >= columns.Length; i--)
+        {
+            modelColumns.RemoveAt(i);
+        }
+        for (int i = 0; i < columns.Length; i++)
+        {
+            var str = reader[i].ToString() ?? "";
+            var columnModel = new ColumnModel
+            {
+                Schema = columns[i],
+                Value = str,
+            };
+            if (modelColumns.Count <= i)
+                modelColumns.Add(new ColumnViewModel(columnModel));
+            else
+                modelColumns[i].Model = columnModel;
+        }
+
+        CurrentTableRowIndex = rowIndex;
+        return true;
+    }
+
+    private async Task DeleteCurrent()
+    {
+        // get values of keys.
+        // make query that does a WHERE and searches those keys.
+        // get the count of rows remaining.
+        // move to next / previous / no row.
+        // update isFirst and isLast row.
+    }
+
+    private async Task InsertCurrent()
+    {
+        // get values of non-keys.
+        // make query that does an INSERT INTO and returns the keys.
+        // figure out which index it ends up at through a reverse query to ensure ordering.
+        // reset the values of the model.
+        // update isFirst and isLast.
+    }
+
+    private async Task SaveCurrent()
+    {
+        // get values of non-keys.
+        // get values of keys.
+        // make an UPDATE query that searches by keys, and sets non-keys.
     }
 }
 

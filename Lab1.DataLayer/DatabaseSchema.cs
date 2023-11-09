@@ -8,10 +8,10 @@ namespace Lab1.DataLayer;
 public sealed class TableModel
 {
     public required FullTableName Name;
-    public required List<ColumnModel> Columns { get; init; }
+    public required List<ColumnSchema> Columns { get; init; }
 }
 
-public struct ColumnModel
+public struct ColumnSchema
 {
     public string Name { get; set; }
     public bool IsOptional { get; set; }
@@ -209,7 +209,7 @@ public static class DatabaseSchemaHelper
                     continue;
 
                 var tableModel = tableModels[tableIndex];
-                var columnModel = new ColumnModel
+                var columnModel = new ColumnSchema
                 {
                     Name = wrapped.ColumnName,
                     IsOptional = wrapped.IsNullable,

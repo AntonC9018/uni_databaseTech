@@ -19,4 +19,14 @@ public class DatabaseSchemaTests
         var tables = await DatabaseSchemaHelper.GetTables(connection);
         await Verify(tables);
     }
+
+
+    [Fact]
+    public void JoinableDbPropertyListTest()
+    {
+        var list = new JoinableDbPropertyList(new[] { "a", "b", "c" });
+        var result = list.Prefix("t");
+        var str = $"{result}";
+        Assert.Equal("t.[a], t.[b], t.[c]", str);
+    }
 }
