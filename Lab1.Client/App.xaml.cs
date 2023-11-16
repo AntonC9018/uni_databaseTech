@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Windows;
-using lab1.Forms;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Laborator1;
@@ -19,66 +18,10 @@ public sealed partial class App : Application
             e.Handled = true;
         };
         
-        // IG this DI framework can't do everything I want, I think it doesn't have custom scopes
         var services = new ServiceCollection();
-        services.AddSingleton<IKeyedProvider<SortingAlgorithmKind, ISortingAlgorithm>>(SortingAlgorithmFactory.Instance);
-        services.AddScoped<IKeyedProvider<SelectionFilterKind, ISelectionFilter>, SelectionFilterFactory>();
-        services.AddScoped<ISortDisplay>(sp => new SortDisplay(
-            sp.GetRequiredService<IObservableValue<IListItemSwapper>>(),
-            animationDelay: TimeSpan.FromMilliseconds(500)));
-
-        void AddObservable<T>(ServiceCollection s, Func<IServiceProvider, ObservableValue<T>>? factory = null)
-        {
-            s.AddScoped<IObservableValue<T>>(sp => sp.GetRequiredService<ObservableValue<T>>());
-            s.AddScoped<IObservableRepo<T>>(sp => sp.GetRequiredService<ObservableValue<T>>());
-            s.AddScoped<IGetter<T>>(sp => sp.GetRequiredService<ObservableValue<T>>());
-            s.AddScoped<ISetter<T>>(sp => sp.GetRequiredService<ObservableValue<T>>());
-            if (factory is not null)
-                s.AddScoped(factory);
-            else
-                s.AddScoped<ObservableValue<T>>();
-        }
-        
-        AddObservable<IItems>(services);
-        AddObservable<ISortingAlgorithm>(services);
-        AddObservable<ISortDisplay>(services, sp =>
-        {
-            var sd = new ObservableValue<ISortDisplay>();
-            var sortDisplay = sp.GetRequiredService<ISortDisplay>();
-            sd.Value = sortDisplay;
-            return sd;
-        });
-        AddObservable<ISelectionFilter>(services);
-        AddObservable<IListItemSwapper>(services);
-        
-        services.AddScoped(sp => new MainMenuModel(
-            // Autofac would've been able to fill these in, in the default framework I have to do this manually.
-            sp.GetRequiredService<ObservableValue<ISortingAlgorithm>>(),
-            sp.GetRequiredService<ObservableValue<ISortDisplay>>(),
-            sp.GetRequiredService<ObservableValue<ISelectionFilter>>(),
-            sp.GetRequiredService<ObservableValue<IItems>>(),
-            sp.GetRequiredService<ItemCountObservableValue>(),
-            sp.GetRequiredService<ObservableValue<IListItemSwapper>>()));
-        services.AddScoped<MainMenuService>();
 
         services.AddScoped<MainMenuViewModel>();
         services.AddScoped<MainMenu>();
-        
-        services.AddScoped<ItemCountObservableValue>();
-        services.AddScoped<RangeSelectionFilterModel>(
-            sp => new RangeSelectionFilterModel(
-                sp.GetRequiredService<ItemCountObservableValue>()));
-        services.AddScoped<ArbitrarySelectionFilterModel>(
-            sp => new ArbitrarySelectionFilterModel(
-                sp.GetRequiredService<ItemCountObservableValue>()));
-
-        services.AddScoped<IGetter<RangeSelectionFilterModel>, ValueGetter<RangeSelectionFilterModel>>();
-        services.AddScoped<IGetter<ArbitrarySelectionFilterModel>, ValueGetter<ArbitrarySelectionFilterModel>>();
-
-        services.AddScoped<IRandomGetter<int>, RandomIntGetter>();
-        services.AddScoped<IRandomGetter<float>, RandomFloatGetter>();
-        services.AddScoped<IRandomGetter<string>, RandomStringGetter>();
-        
         var serviceProvider = services.BuildServiceProvider();
 
         var scope = serviceProvider.CreateScope();

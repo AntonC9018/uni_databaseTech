@@ -19,13 +19,11 @@ namespace Laborator1;
 
 public sealed class MainMenuModel : ObservableObject
 {
-    public
-
 }
 
 public sealed partial class ColumnModel : ObservableObject
 {
-    public ColumnSchema Schema;
+    public required ColumnSchema Schema;
 
     [ObservableProperty]
     private readonly string _value = "";
@@ -37,7 +35,7 @@ public sealed class TableSchemaViewModel
     public required ColumnSchema[] Columns { get; init; }
     public IEnumerable<ColumnSchema> IdColumns => Columns.Where(c => c.IsId);
     public required string Schema { get; init; }
-    public FullyQualifiedTableName FullyQualifiedName => new(Schema, Name);
+    public FullyQualifiedName FullyQualifiedName => new(Schema, Name);
 }
 
 public sealed partial class ColumnViewModel : ObservableObject
@@ -160,7 +158,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
             try
             {
-                bool moved = await MoveToRow(_connection, this, rowIndex);
+                bool moved = await MoveToRow(rowIndex);
                 if (!moved)
                 {
                     MessageBox.Show($"No such row {moved}");
@@ -191,7 +189,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
         var command = _connection.CreateCommand();
         {
             var stringBuilder = new StringBuilder();
-            QueryBuilderHelper.GetRowAtIndexQuery(stringBuilder, table);
+            QueryBuilderHelper.BuildGetRowAtIndexQuery(stringBuilder, table);
             command.CommandText = stringBuilder.ToString();
         }
         var currentIndexParameter = new SqlParameter(QueryBuilderHelper.CurrentIndexParameterName, SqlDbType.Int)
