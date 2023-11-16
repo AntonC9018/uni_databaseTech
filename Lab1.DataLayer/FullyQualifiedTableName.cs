@@ -5,7 +5,7 @@ public readonly struct FullyQualifiedName : ISpanFormattable
     public readonly string Schema;
     public readonly string Name;
 
-    public FullyQualifiedTableName(string schema, string name)
+    public FullyQualifiedName(string schema, string name)
     {
         Schema = schema;
         Name = name;

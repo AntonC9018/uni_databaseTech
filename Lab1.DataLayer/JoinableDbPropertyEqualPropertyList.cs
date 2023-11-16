@@ -1,22 +1,26 @@
 namespace Lab1.DataLayer;
 
-public readonly struct JoinableDbPropertyEqualVariablePropertyList<TName, TValue>
+public struct JoinableDbPropertyEqualVariablePropertyList<TName, TValue>
+    : ISpanFormattable, IDisposable
+
     where TName : ISpanFormattable
     where TValue : ISpanFormattable
-
-    : ISpanFormattable, IDisposable
 {
     private readonly IEnumerator<TName> _namesEnumerator;
     private readonly Func<int, TValue> _valueFunc;
-    private readonly bool _isEmpty;
+    private readonly string _delimiter;
+    private readonly bool IsEmpty => _index == -1;
     private int _index;
 
-    public JoinableDbPropertyList(IEnumerable<TName> names, Func<int, TValue> valueFunc)
+    public JoinableDbPropertyEqualVariablePropertyList(
+        IEnumerable<TName> names,
+        Func<int, TValue> valueFunc,
+        string delimiter = ", ")
     {
-        _prefix = prefix;
         _namesEnumerator = names.GetEnumerator();
-        _isEmpty = !_namesEnumerator.MoveNext();
         _valueFunc = valueFunc;
+        _index = !_namesEnumerator.MoveNext() ? -1 : 0;
+        _delimiter = delimiter;
     }
 
     public string ToString(string? format, IFormatProvider? formatProvider)
@@ -31,7 +35,7 @@ public readonly struct JoinableDbPropertyEqualVariablePropertyList<TName, TValue
         IFormatProvider? provider)
     {
         charsWritten = 0;
-        if (_isEmpty)
+        if (IsEmpty)
             return true;
 
         while (true)
@@ -50,7 +54,7 @@ public readonly struct JoinableDbPropertyEqualVariablePropertyList<TName, TValue
             {
                 success = destination.TryWrite(
                     provider,
-                    $", {_namesEnumerator.Current} = {value}",
+                    $"{_delimiter}{_namesEnumerator.Current} = {value}",
                     out newWritten);
             }
 
@@ -69,12 +73,16 @@ public readonly struct JoinableDbPropertyEqualVariablePropertyList<TName, TValue
     public void Dispose() => _namesEnumerator.Dispose();
 }
 
-public static class JoinableHelper
+public static partial class JoinableHelper
 {
-    public static JoinableDbPropertyEqualVariablePropertyList<TProperty, TValue> EqualValueList(
-        IEnumerable<TProperty> property,
-        Func<int, TValue> valueFunc)
+    public static JoinableDbPropertyEqualVariablePropertyList<TProperty, TValue> 
+        EqualValueList<TProperty, TValue>(
+            this IEnumerable<TProperty> properties,
+            Func<int, TValue> valueFunc,
+            string delimiter = ", ")
+        where TProperty : ISpanFormattable
+        where TValue : ISpanFormattable
     {
-        return new(property, valueFunc);
+        return new(properties, valueFunc);
     }
 }
