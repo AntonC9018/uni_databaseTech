@@ -37,6 +37,7 @@ public sealed class TableSchemaViewModel
     public required ColumnSchema[] Columns { get; init; }
     public IEnumerable<ColumnSchema> IdColumns => Columns.Where(c => c.IsId);
     public required string Schema { get; init; }
+    public FullyQualifiedTableName FullyQualifiedName => new(Schema, Name);
 }
 
 public sealed partial class ColumnViewModel : ObservableObject
