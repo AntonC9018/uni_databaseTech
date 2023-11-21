@@ -33,7 +33,7 @@
                IsEnabled="{Binding IsNotFirstRow}"
                />
            <TextBox
-               Text="{Binding CurrentTableRowId}"
+               Text="{Binding CurrentTableRowIndex}"
                IsReadOnly="{Binding IsTableSelected}"
                MinWidth="20px"
                />
@@ -81,17 +81,17 @@
             >
             <Button
                 Content="Insert"
-                Command="{Binding OpenInsertWindow}"
+                Command="{Binding InsertCurrentCommand}"
                 />
             <Button
                 Content="Update"
                 IsEnabled="{Binding IsRowSelected}"
-                Command="{Binding UpdateRow}"
+                Command="{Binding SaveCurrentCommand}"
                 />
             <Button
                 Content="Delete"
                 IsEnabled="{Binding IsRowSelected}"
-                Command="{Binding DeleteRow}"
+                Command="{Binding DeleteCurrentCommand}"
                 />
         </StackPanel>
     </DockPanel>
