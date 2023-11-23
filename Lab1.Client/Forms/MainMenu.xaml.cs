@@ -206,12 +206,13 @@ public sealed partial class MainMenuViewModel : ObservableObject
     {
         DoOperationFireAndForget(async () =>
         {
-            await _connection.OpenAsync(_applicationCancellationToken);
+            await _connection.OpenAsync(_loadingCancellationToken);
             if (_connection.State != ConnectionState.Open)
                 return "Failed to open connection.";
 
             var tables = await DatabaseSchemaHelper.GetTables(_connection, _loadingCancellationToken);
             _tables = tables.Select(t => new TableSchemaModel(t)).ToArray();
+            _model.TableModels = tables;
             if (_tables.Length > 0)
                 SelectTable(0);
             OnPropertyChanged(nameof(TableSchemas));
@@ -249,9 +250,9 @@ public sealed partial class MainMenuViewModel : ObservableObject
         }
     }
 
-    private void DoOperationFireAndForget(Func<Task<ErrorMessage>> func)
+    private async void DoOperationFireAndForget(Func<Task<ErrorMessage>> func)
     {
-        Task.Run(() => DoOperationFireAndForget1(func), _applicationCancellationToken);
+        await DoOperationFireAndForget1(func);
     }
 
     private async Task DoOperationFireAndForget1(Func<Task<ErrorMessage>> func)
@@ -286,17 +287,27 @@ public sealed partial class MainMenuViewModel : ObservableObject
             catch (Exception e)
             {
                 StringBuilder sb = new();
-                sb.AppendLine(e.Message);
-                sb.AppendLine(e.StackTrace);
-                // Aggregate exception
-                if (e is AggregateException aggregateException)
+
+                Append(e);
+                // ReSharper disable once VariableHidesOuterVariable
+                void Append(Exception e)
                 {
-                    foreach (var innerException in aggregateException.InnerExceptions)
+                    sb.AppendLine(e.Message);
+                    sb.AppendLine(e.StackTrace);
+                    if (e.InnerException is { } inner)
                     {
-                        sb.AppendLine(innerException.Message);
-                        sb.AppendLine(innerException.StackTrace);
+                        Append(inner);
+                    }
+                    if (e is AggregateException aggregateException)
+                    {
+                        foreach (var innerException in aggregateException.InnerExceptions)
+                        {
+                            Append(innerException);
+                        }
                     }
                 }
+
+                // Aggregate exception
                 MessageBox.Show(sb.ToString(), "Error");
             }
 
@@ -418,7 +429,6 @@ public sealed partial class MainMenuViewModel : ObservableObject
             }
         }
 
-        Reset();
         void Reset()
         {
             IsLastRow = !cursor.FoundEnd;
@@ -436,7 +446,10 @@ public sealed partial class MainMenuViewModel : ObservableObject
             CurrentTableRowIndex = null;
         }
 
-        _model.TriggerAllValuesChanged();
+        {
+            Reset();
+            _model.TriggerAllValuesChanged();
+        }
         return true;
     }
 
@@ -469,7 +482,6 @@ public sealed partial class MainMenuViewModel : ObservableObject
         }
         else
         {
-            // Table now empty
             CurrentTableRowIndex = null;
         }
     }
@@ -526,22 +538,30 @@ public sealed partial class MainMenuViewModel : ObservableObject
         {
             _model.ColumnValues[i] = "";
         }
-        for (int i = 0; i < prevCount; i++)
+
+        // Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            _columns[i].OnTableChanged();
+            for (int i = 0; i < prevCount; i++)
+            {
+                _columns[i].OnTableChanged();
+            }
+            for (int i = prevCount; i < table.Columns.Count; i++)
+            {
+                _columns.Add(new ColumnViewModel(_model, i));
+            }
+            _model.CurrentTableSchemaIndex = tableIndex;
+            _model.TriggerAllValuesChanged();
         }
-        for (int i = prevCount; i < table.Columns.Count; i++)
-        {
-            _columns.Add(new ColumnViewModel(_model, i));
-        }
-        _model.ColumnValues = new List<string>();
-        _model.CurrentTableSchemaIndex = tableIndex;
-        _model.TriggerAllValuesChanged();
+        // );
     }
 }
 
 public sealed partial class MainMenu : Window
 {
     private MainMenuViewModel ViewModel => (MainMenuViewModel) DataContext;
-    public MainMenu(MainMenuViewModel viewModel) => DataContext = viewModel;
+    public MainMenu(MainMenuViewModel viewModel)
+    {
+        DataContext = viewModel;
+        InitializeComponent();
+    }
 }

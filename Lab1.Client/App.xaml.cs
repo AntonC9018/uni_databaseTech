@@ -14,7 +14,7 @@ public sealed partial class App : Application
 {
     private void Main(object sender, StartupEventArgs e)
     {
-        this.DispatcherUnhandledException += static  (_, e) =>
+        this.DispatcherUnhandledException += static (_, e) =>
         {
             MessageBox.Show(
                 "An unhandled exception just occurred: " + e.Exception.Message,
@@ -56,9 +56,11 @@ public sealed partial class App : Application
 
         var app = builder.Build();
 
-        using var scope = app.Services.CreateScope();
+        var scope = app.Services.CreateScope();
         var mainMenu = scope.ServiceProvider.GetRequiredService<MainMenu>();
         mainMenu.Show();
+
+        this.Exit += (_, _) => scope.Dispose();
     }
 }
 

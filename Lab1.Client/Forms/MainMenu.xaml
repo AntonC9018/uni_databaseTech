@@ -6,9 +6,9 @@
         xmlns:local="clr-namespace:Laborator1"
         mc:Ignorable="d"
         Title="Main Menu">
-    <Window.DataContext>
-        <local:MainMenuViewModel/>
-    </Window.DataContext>
+    <!-- <Window.DataContext> -->
+    <!--     <local:MainMenuViewModel/> -->
+    <!-- </Window.DataContext> -->
     <DockPanel
         LastChildFill="false"
         >
