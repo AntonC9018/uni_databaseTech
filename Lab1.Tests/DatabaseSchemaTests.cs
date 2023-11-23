@@ -24,7 +24,7 @@ public class DatabaseSchemaTests
     [Fact]
     public void JoinableDbPropertyListTest()
     {
-        var list = new JoinableDbPropertyList(new[] { "a", "b", "c" });
+        var list = new[] { "a", "b", "c" }.JoinableDbPropertyList();
         var result = list.Prefix("t");
         var str = $"{result}";
         Assert.Equal("t.[a], t.[b], t.[c]", str);

@@ -63,13 +63,17 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Label
-                            Content="{Binding Name}"
-                            />
-                        <TextBox
-                            Text="{Binding Value}"
-                            IsReadOnly="{Binding IsReadOnly}"
-                            />
+                        <StackPanel
+                            Orientation="Horizontal"
+                            >
+                            <Label
+                                Content="{Binding Name}"
+                                />
+                            <TextBox
+                                Text="{Binding Value}"
+                                IsReadOnly="{Binding IsReadOnly}"
+                                />
+                        </StackPanel>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>

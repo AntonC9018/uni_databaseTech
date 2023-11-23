@@ -212,7 +212,19 @@ public static class DatabaseSchemaHelper
                 var tableModel = tableModels[tableIndex];
                 var columnModel = new ColumnSchema
                 {
-                    Type = columnsTable.Columns[i].DataType,
+                    Type = wrapped.DataType switch
+                    {
+                        "int" => typeof(int),
+                        "nvarchar" or "ntext" or "nchar" => typeof(string),
+                        "bit" => typeof(bool),
+                        "datetime" => typeof(DateTime),
+                        "uniqueidentifier" => typeof(Guid),
+                        "money" => typeof(decimal),
+                        "smallint" => typeof(short),
+                        "real" => typeof(float),
+                        "image" or "varbinary" => typeof(byte[]),
+                        _ => throw new NotSupportedException("Unsupported type: " + wrapped.DataType),
+                    },
                     Name = wrapped.ColumnName,
                     IsOptional = wrapped.IsNullable,
                     HasDefault = wrapped.Default is not null,

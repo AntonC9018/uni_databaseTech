@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Documents;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Lab1.DataLayer;
@@ -17,26 +18,26 @@ namespace Laborator1;
 
 public sealed partial class MainMenuModel : ObservableObject
 {
-    public MainMenuModel(TableSchemaModel[] tableModels) => TableModels = tableModels;
-
-    public readonly TableSchemaModel[] TableModels;
+    public TableModel[]? TableModels;
 
     [ObservableProperty]
     private int? _currentTableSchemaIndex = null;
 
     public List<string> ColumnValues = new();
 
-    public TableSchemaModel? CurrentTableModel
+    public TableModel? CurrentTableModel
     {
         get
         {
+            if (TableModels is null)
+                return null;
             if (CurrentTableSchemaIndex is { } index)
                 return TableModels[index];
             return null;
         }
     }
 
-    public ColumnSchema[] ColumnSchemas
+    public IList<ColumnSchema> ColumnSchemas
     {
         get
         {
@@ -55,10 +56,13 @@ public sealed partial class MainMenuModel : ObservableObject
 
 public sealed class TableSchemaModel
 {
-    public required string Name { get; init; }
-    public required ColumnSchema[] Columns { get; init; }
+    private readonly TableModel _model;
+    public TableSchemaModel(TableModel model) => _model = model;
+
+    public string Name => _model.Name.Name;
+    public string Schema => _model.Name.Schema;
+    public List<ColumnSchema> Columns => _model.Columns;
     public IEnumerable<ColumnSchema> IdColumns => Columns.Where(c => c.IsId);
-    public required string Schema { get; init; }
     public FullyQualifiedName FullyQualifiedName => new(Schema, Name);
 }
 
@@ -126,11 +130,14 @@ public sealed partial class MainMenuViewModel : ObservableObject
                 }
             }
         };
+
+        LoadTablesFireAndForget();
     }
 
     private readonly MainMenuModel _model;
     private readonly ObservableCollection<ColumnViewModel> _columns = new();
     private readonly SqlConnection _connection;
+    private TableSchemaModel[] _tables = Array.Empty<TableSchemaModel>();
 
     public int? CurrentTableSchemaIndex
     {
@@ -154,15 +161,19 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanMoveNextRow))]
+    [NotifyPropertyChangedFor(nameof(IsNotFirstRow))]
     private bool _isFirstRow = true;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanMovePreviousRow))]
+    [NotifyPropertyChangedFor(nameof(IsNotLastRow))]
     private bool _isLastRow = true;
 
-    public IEnumerable<TableSchemaModel> TableSchemas => _model.TableModels;
+    public IEnumerable<TableSchemaModel> TableSchemas => _tables;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanMovePreviousRow))]
+    [NotifyPropertyChangedFor(nameof(CanMoveNextRow))]
     private bool _isLoading;
 
     private readonly CancellationToken _applicationCancellationToken;
@@ -190,6 +201,20 @@ public sealed partial class MainMenuViewModel : ObservableObject
         return rowIndex;
     }
 
+    private void LoadTablesFireAndForget()
+    {
+        DoOperationFireAndForget(async () =>
+        {
+            await _connection.OpenAsync(_loadingCancellationToken);
+            var tables = await DatabaseSchemaHelper.GetTables(_connection, _loadingCancellationToken);
+            _tables = tables.Select(t => new TableSchemaModel(t)).ToArray();
+            if (_tables.Length > 0)
+                SelectTable(0);
+            OnPropertyChanged(nameof(TableSchemas));
+            return null;
+        });
+    }
+
     [RelayCommand]
     public void MovePreviousRow()
     {
@@ -212,7 +237,12 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
     private record struct ErrorMessage(string? Value)
     {
-        public static implicit operator ErrorMessage(string? value) => new(value);
+        public static implicit operator ErrorMessage(string? value)
+        {
+            if (value is not null)
+                throw new InvalidOperationException(value);
+            return new(value);
+        }
     }
 
     private async void DoOperationFireAndForget(Func<Task<ErrorMessage>> func)
@@ -246,7 +276,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
             }
             catch (Exception e)
             {
-                MessageBox.Show(e.Message);
+                MessageBox.Show(e.Message + Environment.NewLine + e.StackTrace, "Error");
             }
 
             IsLoading = false;
@@ -306,7 +336,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
         Debug.Assert(maybeSchemaIndex is not null);
         int schemaIndex = maybeSchemaIndex.Value;
 
-        var table = _model.TableModels[schemaIndex];
+        var table = _tables[schemaIndex];
         return table;
     }
 
@@ -359,18 +389,6 @@ public sealed partial class MainMenuViewModel : ObservableObject
                 continue;
 
             var columnValues = _model.ColumnValues;
-            int propertiesOffset = 1;
-
-            // var modelColumns = _columns;
-            // for (int i = modelColumns.Count - 1; i >= columnValues.Count; i--)
-            // {
-            //     modelColumns.RemoveAt(i);
-            // }
-            // for (int i = modelColumns.Count; i < columnValues.Count; i++)
-            // {
-            //     modelColumns.Add(new ColumnViewModel(_model, i));
-            // }
-            // CollectionsMarshal.SetCount(_model.ColumnValues, columnValues.Count);
 
             for (int i = 0; i < columnValues.Count; i++)
             {
@@ -476,14 +494,14 @@ public sealed partial class MainMenuViewModel : ObservableObject
     private void SelectTable(int tableIndex)
     {
         CurrentTableRowIndex = null;
-        var table = _model.TableModels[tableIndex];
+        var table = _model.TableModels![tableIndex];
         int prevCount = _columns.Count;
-        for (int i = _columns.Count - 1; i >= table.Columns.Length; i--)
+        for (int i = _columns.Count - 1; i >= table.Columns.Count; i--)
         {
             _columns.RemoveAt(i);
         }
-        CollectionsMarshal.SetCount(_model.ColumnValues, table.Columns.Length);
-        for (int i = prevCount; i < table.Columns.Length; i++)
+        CollectionsMarshal.SetCount(_model.ColumnValues, table.Columns.Count);
+        for (int i = prevCount; i < table.Columns.Count; i++)
         {
             _model.ColumnValues[i] = "";
         }
@@ -491,7 +509,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
         {
             _columns[i].OnTableChanged();
         }
-        for (int i = prevCount; i < table.Columns.Length; i++)
+        for (int i = prevCount; i < table.Columns.Count; i++)
         {
             _columns.Add(new ColumnViewModel(_model, i));
         }
@@ -503,5 +521,6 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
 public sealed partial class MainMenu : Window
 {
-
+    private MainMenuViewModel ViewModel => (MainMenuViewModel) DataContext;
+    public MainMenu(MainMenuViewModel viewModel) => DataContext = viewModel;
 }
