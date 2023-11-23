@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Data;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -205,7 +206,10 @@ public sealed partial class MainMenuViewModel : ObservableObject
     {
         DoOperationFireAndForget(async () =>
         {
-            await _connection.OpenAsync(_loadingCancellationToken);
+            await _connection.OpenAsync(_applicationCancellationToken);
+            if (_connection.State != ConnectionState.Open)
+                return "Failed to open connection.";
+
             var tables = await DatabaseSchemaHelper.GetTables(_connection, _loadingCancellationToken);
             _tables = tables.Select(t => new TableSchemaModel(t)).ToArray();
             if (_tables.Length > 0)
@@ -245,7 +249,12 @@ public sealed partial class MainMenuViewModel : ObservableObject
         }
     }
 
-    private async void DoOperationFireAndForget(Func<Task<ErrorMessage>> func)
+    private void DoOperationFireAndForget(Func<Task<ErrorMessage>> func)
+    {
+        Task.Run(() => DoOperationFireAndForget1(func), _applicationCancellationToken);
+    }
+
+    private async Task DoOperationFireAndForget1(Func<Task<ErrorMessage>> func)
     {
         if (IsLoading)
             return;
@@ -276,7 +285,19 @@ public sealed partial class MainMenuViewModel : ObservableObject
             }
             catch (Exception e)
             {
-                MessageBox.Show(e.Message + Environment.NewLine + e.StackTrace, "Error");
+                StringBuilder sb = new();
+                sb.AppendLine(e.Message);
+                sb.AppendLine(e.StackTrace);
+                // Aggregate exception
+                if (e is AggregateException aggregateException)
+                {
+                    foreach (var innerException in aggregateException.InnerExceptions)
+                    {
+                        sb.AppendLine(innerException.Message);
+                        sb.AppendLine(innerException.StackTrace);
+                    }
+                }
+                MessageBox.Show(sb.ToString(), "Error");
             }
 
             IsLoading = false;
