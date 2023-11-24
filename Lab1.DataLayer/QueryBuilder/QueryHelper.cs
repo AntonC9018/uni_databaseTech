@@ -1,11 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
-using System.Printing;
 using System.Text;
-using Laborator1;
 using Microsoft.Data.SqlClient;
 
 namespace Lab1.DataLayer;
@@ -27,7 +22,7 @@ public static class QueryBuilderHelper
 
     public static void BuildGetRowAtIndexQuery(
         StringBuilder sb,
-        TableSchemaModel tableSchema)
+        TableModel tableSchema)
     {
         var idPropertiesList = tableSchema.IdColumns
             .Select(c => c.Name)
@@ -118,7 +113,7 @@ public static class QueryBuilderHelper
     private static IEnumerable<SqlParameter> SetValues(
         IEnumerable<int> columnIndices,
         List<string> allValues,
-        TableSchemaModel tableSchema)
+        TableModel tableSchema)
     {
         foreach (var i in columnIndices)
         {
@@ -156,7 +151,7 @@ public static class QueryBuilderHelper
 
     public static void BuildDeleteRowWithKeyQuery(
         StringBuilder sb,
-        TableSchemaModel tableSchema)
+        TableModel tableSchema)
     {
         var equalValueList = tableSchema.IdColumns
             .Select(x => new FullyQualifiedName("t", x.Name))
@@ -175,7 +170,7 @@ public static class QueryBuilderHelper
     }
 
     public static IEnumerable<SqlParameter> GetParametersForDeleteRowWithKeyQuery(
-        TableSchemaModel tableSchema,
+        TableModel tableSchema,
         List<string> allValues)
     {
         return SetValues(
@@ -187,7 +182,7 @@ public static class QueryBuilderHelper
     [SuppressMessage("ReSharper", "PossibleMultipleEnumeration")]
     public static void BuildInsertRowWithValuesQuery(
         StringBuilder sb,
-        TableSchemaModel tableSchema)
+        TableModel tableSchema)
     {
         var idColumns = tableSchema.IdColumns.ToArray();
         var keyPropertiesList = idColumns
@@ -257,7 +252,7 @@ public static class QueryBuilderHelper
     }
 
     public static IEnumerable<SqlParameter> GetParametersForInsertRowWithValuesQuery(
-        TableSchemaModel tableSchema,
+        TableModel tableSchema,
         List<string> allValues)
     {
         return SetValues(
@@ -268,7 +263,7 @@ public static class QueryBuilderHelper
 
     public static void BuildUpdateRowQuery(
         StringBuilder sb,
-        TableSchemaModel tableSchema)
+        TableModel tableSchema)
     {
         var notIdColumns = tableSchema.Columns.Where(c => !c.IsId);
         int nonIdColumnCount = notIdColumns.Count();
@@ -287,7 +282,7 @@ public static class QueryBuilderHelper
     }
 
     public static IEnumerable<SqlParameter> GetParametersForUpdateRowQuery(
-        TableSchemaModel tableSchema,
+        TableModel tableSchema,
         List<string> allValues)
     {
         var notIdColumnIndices = tableSchema.Columns.SelectIndices(c => !c.IsId);

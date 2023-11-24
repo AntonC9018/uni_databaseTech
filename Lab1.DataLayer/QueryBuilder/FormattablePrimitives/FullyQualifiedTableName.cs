@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace Lab1.DataLayer;
 
 public readonly struct FullyQualifiedName : ISpanFormattable
@@ -11,9 +13,14 @@ public readonly struct FullyQualifiedName : ISpanFormattable
         Name = name;
     }
 
-    public string ToString(string? format, IFormatProvider? formatProvider)
+    public string ToString(string? format = null, IFormatProvider? formatProvider = null)
     {
-        throw new NotImplementedException();
+        var handler = new DefaultInterpolatedStringHandler(
+            literalLength: 0,
+            formattedCount: 1,
+            formatProvider);
+        handler.AppendFormatted(this, format);
+        return handler.ToStringAndClear();
     }
 
     public bool TryFormat(

@@ -9,6 +9,9 @@ public sealed class TableModel
 {
     public required FullTableName Name;
     public required List<ColumnSchema> Columns { get; init; }
+
+    public FullyQualifiedName FullyQualifiedName => new(Name.Schema, Name.Name);
+    public IEnumerable<ColumnSchema> IdColumns => Columns.Where(c => c.IsId);
 }
 
 public sealed class ColumnSchema

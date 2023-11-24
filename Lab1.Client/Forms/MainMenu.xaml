@@ -21,7 +21,7 @@
                />
            <ComboBox
                Name="TablesDropdown"
-               ItemsSource="{Binding TableSchemas, Mode=OneTime}"
+               ItemsSource="{Binding TableSchemas, Mode=OneWay}"
                SelectedIndex="{Binding CurrentTableSchemaIndex}"
                MinWidth="100px"
                SelectedValuePath="Name"
@@ -44,40 +44,38 @@
                />
        </StackPanel>
 
-        <StackPanel
+        <ItemsControl
+            ItemsSource="{Binding Columns}"
             DockPanel.Dock="Left"
-            Orientation="Vertical"
+            Grid.IsSharedSizeScope="True"
+            VerticalAlignment="Stretch"
+            HorizontalAlignment="Stretch"
             >
-            <ItemsControl
-                ItemsSource="{Binding Columns}"
-                >
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                        </Grid>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel
-                            Orientation="Horizontal"
-                            >
-                            <Label
-                                Content="{Binding Name}"
-                                />
-                            <TextBox
-                                Text="{Binding Value}"
-                                IsReadOnly="{Binding IsReadOnly}"
-                                />
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Grid
+                        >
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" SharedSizeGroup="NameColumn"/>
+                            <ColumnDefinition Width="*" SharedSizeGroup="TextColumn"/>
+                        </Grid.ColumnDefinitions>
+                        <Label
+                            Content="{Binding Name}"
+                            Grid.Column="0"
+                            />
+                        <TextBox
+                            Text="{Binding Value}"
+                            IsEnabled="{Binding IsEditable}"
+                            MinWidth="100px"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            VerticalContentAlignment="Center"
+                            Grid.Column="1"
+                            />
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
 
         <StackPanel
             DockPanel.Dock="Right"
