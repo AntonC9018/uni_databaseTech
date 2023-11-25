@@ -9,7 +9,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Documents;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Lab1.DataLayer;
@@ -63,8 +62,7 @@ public sealed class TableSchemaModel
 
     public string Name => Model.Name.Name;
     public string Schema => Model.Name.Schema;
-    public List<ColumnSchema> Columns => Model.Columns;
-    public IEnumerable<ColumnSchema> IdColumns => Columns.Where(c => c.IsId);
+    public IEnumerable<ColumnSchema> Columns => Model.Columns;
     public FullyQualifiedName FullyQualifiedName => new(Schema, Name);
     public override string ToString() => FullyQualifiedName.ToString();
 }
@@ -214,11 +212,52 @@ public sealed partial class MainMenuViewModel : ObservableObject
                 return "Failed to open connection.";
 
             var tables = await DatabaseSchemaHelper.GetTables(_connection, _loadingCancellationToken);
+
+            StringBuilder errorBuilder = new();
+            {
+                foreach (var t in tables)
+                {
+                    if (!t.IdColumns.Any())
+                    {
+                        errorBuilder.AppendLine($"Table {t.Name} doesn't have an id column.");
+                    }
+                }
+
+                if (errorBuilder.Length > 0)
+                {
+                    return errorBuilder.ToString();
+                }
+            }
+            {
+                // We filter each column so that it doesn't know about byte[] types,
+                // which cannot be converted from string.
+                foreach (var table in tables)
+                {
+                    table.Columns.RemoveAll(c =>
+                    {
+                        bool isRepresentableAsString = c.IsTypeRepresentableAsString();
+                        if (!c.IsOptional && !isRepresentableAsString)
+                        {
+                            errorBuilder.AppendLine($"Column {c.Name} of table {table.Name} is not optional and cannot be represented as a string.");
+                        }
+                        return !isRepresentableAsString;
+                    });
+                }
+
+                if (errorBuilder.Length > 0)
+                {
+                    return errorBuilder.ToString();
+                }
+            }
+
             _tables = tables.Select(t => new TableSchemaModel(t)).ToArray();
             _model.TableModels = tables;
             if (_tables.Length > 0)
                 SelectTable(0);
             OnPropertyChanged(nameof(TableSchemas));
+
+            await MoveToRow(0);
+
             return null;
         });
     }
@@ -394,7 +433,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
         var parameters = QueryBuilderHelper.GetParametersForGetRowAtIndexQuery(rowIndex);
         command.Parameters.AddRange(parameters);
 
-        var reader = await command.ExecuteReaderAsync(_loadingCancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(_loadingCancellationToken);
         Cursor cursor = new();        
         
         for (int iteration = 0; iteration < 3; iteration++)
@@ -403,7 +442,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
             if (!moved)
                 break;
 
-            int rowNumber = reader.GetInt32(0);
+            long rowNumber = reader.GetInt64(0);
             if (rowNumber < rowIndex)
             {
                 Debug.Assert(!cursor.FoundStart);
@@ -503,7 +542,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
             _model.ColumnValues);
         command.Parameters.AddRange(parameters);
 
-        int rowIndex = (int) await command.ExecuteScalarAsync(_loadingCancellationToken);
+        int rowIndex = (int) (long) await command.ExecuteScalarAsync(_loadingCancellationToken);
 
         // Let's just not bother and reload the row with a separate query,
         // it's just so much simpler.

@@ -49,47 +49,63 @@ public readonly struct JoinableDbPropertyList<T>
             {
                 bool success;
                 int newWritten;
-                if (_prefix is null)
+
+                if (!_isFirst)
                 {
-                    if (_isFirst)
-                    {
-                        success = destination.TryWrite(
-                            provider,
-                            $"[{_namesEnumerator.Current}]",
-                            out newWritten);
-                    }
-                    else
-                    {
-                        success = destination.TryWrite(
-                            provider,
-                            $", [{_namesEnumerator.Current}]",
-                            out newWritten);
-                    }
+                    success = destination.TryWrite(
+                        provider,
+                        $", ",
+                        out newWritten);
+                    if (!success)
+                        return false;
+
+                    charsWritten += newWritten;
+                    destination = destination[newWritten ..];
+                }
+
+                if (_prefix is not null)
+                {
+                    success = destination.TryWrite(
+                        provider,
+                        $"{_prefix}.",
+                        out newWritten);
+
+                    if (!success)
+                        return false;
+
+                    charsWritten += newWritten;
+                    destination = destination[newWritten ..];
+                }
+
+                var current = _namesEnumerator.Current;
+                if (current is IRequiresSquareBrackets { RequiresSquareBrackets: false })
+                {
+                    success = destination.TryWrite(
+                        provider,
+                        $"{current}",
+                        out newWritten);
+
+                    if (!success)
+                        return false;
+
+                    charsWritten += newWritten;
+                    destination = destination[newWritten ..];
                 }
                 else
                 {
-                    if (_isFirst)
-                    {
-                        success = destination.TryWrite(
-                            provider,
-                            $"{_prefix}.[{_namesEnumerator.Current}]",
-                            out newWritten);
-                    }
-                    else
-                    {
-                        success = destination.TryWrite(
-                            provider,
-                            $", {_prefix}.[{_namesEnumerator.Current}]",
-                            out newWritten);
-                    }
+                    success = destination.TryWrite(
+                        provider,
+                        $"[{current}]",
+                        out newWritten);
+
+                    if (!success)
+                        return false;
+
+                    charsWritten += newWritten;
+                    destination = destination[newWritten ..];
                 }
 
-                if (!success)
-                    return false;
-
                 _isFirst = false;
-                charsWritten += newWritten;
-                destination = destination[newWritten ..];
 
                 if (!_namesEnumerator.MoveNext())
                     return true;
@@ -100,10 +116,18 @@ public readonly struct JoinableDbPropertyList<T>
     }
 }
 
-public readonly struct ValueAsFormattable : ISpanFormattable
+public readonly struct ValueAsFormattable : ISpanFormattable, IRequiresSquareBrackets
 {
     private readonly string _value;
-    public ValueAsFormattable(string value) => _value = value;
+    private readonly bool _needsSquareBrackets;
+
+    public ValueAsFormattable(string value, bool needsSquareBrackets)
+    {
+        _value = value;
+        _needsSquareBrackets = needsSquareBrackets;
+    }
+
+    public bool RequiresSquareBrackets => _needsSquareBrackets;
 
     public string ToString(
         string? format,
@@ -136,8 +160,9 @@ public static partial class JoinableHelper
     }
 
     public static JoinableDbPropertyList<ValueAsFormattable> JoinableDbPropertyList(
-        this IEnumerable<string> properties)
+        this IEnumerable<string> properties,
+        bool needsSquareBrackets = true)
     {
-        return new(properties.Select(x => new ValueAsFormattable(x)));
+        return new(properties.Select(x => new ValueAsFormattable(x, needsSquareBrackets)));
     }
 }
