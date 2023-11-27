@@ -10,7 +10,7 @@
     <!--     <local:MainMenuViewModel/> -->
     <!-- </Window.DataContext> -->
     <DockPanel
-        LastChildFill="false"
+        LastChildFill="False"
         >
         <StackPanel
            Orientation="Horizontal"
@@ -30,17 +30,20 @@
            <Button
                Content="&lt;"
                Command="{Binding MovePreviousRowCommand}"
-               IsEnabled="{Binding IsNotFirstRow}"
+               IsEnabled="{Binding CanMovePreviousRow}"
                />
            <TextBox
-               Text="{Binding CurrentTableRowIndex}"
-               IsReadOnly="{Binding IsTableSelected}"
+               Text="{Binding ViewCurrentRowIndex}"
+               IsEnabled="{Binding IsTableSelected}"
+               KeyUp="TextBox_KeyEnterUpdate"
+               HorizontalContentAlignment="Center"
+               VerticalContentAlignment="Center"
                MinWidth="20px"
                />
            <Button
                Content="&gt;"
                Command="{Binding MoveNextRowCommand}"
-               IsEnabled="{Binding IsNotLastRow}"
+               IsEnabled="{Binding CanMoveNextRow}"
                />
        </StackPanel>
 
@@ -63,10 +66,12 @@
                             Content="{Binding Name}"
                             Grid.Column="0"
                             />
+                        <!-- TODO: Figure out a way to make it not stretch so far as making the right panel go off screen -->
                         <TextBox
-                            Text="{Binding Value}"
+                            Text="{Binding Value, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
                             IsEnabled="{Binding IsEditable}"
                             MinWidth="100px"
+                            MaxWidth="720px"
                             HorizontalAlignment="Stretch"
                             HorizontalContentAlignment="Left"
                             VerticalContentAlignment="Center"
@@ -80,6 +85,7 @@
         <StackPanel
             DockPanel.Dock="Right"
             Orientation="Vertical"
+            Width="100px"
             >
             <Button
                 Content="Insert"

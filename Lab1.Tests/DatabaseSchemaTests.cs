@@ -29,4 +29,37 @@ public class DatabaseSchemaTests
         var str = $"{result}";
         Assert.Equal("t.[a], t.[b], t.[c]", str);
     }
+
+    [Fact]
+    public void JoinableDbPropertyListTestWithNull()
+    {
+        var list = new[] { "a", "b", "c" }.JoinableDbPropertyList();
+        var result = list.Prefix(null);
+        var str = $"{result}";
+        Assert.Equal("[a], [b], [c]", str);
+    }
+
+    [Fact]
+    public Task JoinableDbPropertyList_ReusedEnumerable()
+    {
+        IEnumerable<string> Get()
+        {
+            for (int i = 0; i < 100; i++)
+                yield return "abcdefg" + i;
+        }
+
+        var e = Get();
+        var list = e.JoinableDbPropertyList();
+
+        var tList = list.Prefix("t");
+        var t1List = list.Prefix("t1");
+        var result1 = $"{tList}";
+        var result2 = $"{t1List}";
+
+        return Verify(new
+        {
+            result1,
+            result2
+        });
+    }
 }

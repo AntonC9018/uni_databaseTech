@@ -3,15 +3,13 @@ using System.Security.Cryptography;
 
 namespace Lab1.DataLayer;
 
-public struct EscapedValue : ISpanFormattable
+public readonly struct EscapedValue : ISpanFormattable
 {
     private readonly string _value;
-    private int _position;
 
     public EscapedValue(string value)
     {
         _value = value;
-        _position = -1;
     }
 
     public string ToString(string? format, IFormatProvider? formatProvider)
@@ -45,15 +43,15 @@ public struct EscapedValue : ISpanFormattable
             return true;
         }
 
-        if (_position == -1)
         {
             if (!WriteSingleChar('\'', ref locals))
                 return false;
         }
+        int position = 0;
 
-        while (_position < _value.Length)
+        while (position < _value.Length)
         {
-            char ch = _value[_position];
+            char ch = _value[position];
             if (ch != '\'')
             {
                 if (!WriteSingleChar('\'', ref locals))

@@ -1,25 +1,22 @@
 namespace Lab1.DataLayer;
 
-public struct JoinableDbPropertyEqualVariablePropertyList<TName, TValue>
-    : ISpanFormattable, IDisposable
+public readonly struct JoinableDbPropertyEqualVariablePropertyList<TName, TValue>
+    : ISpanFormattable
 
     where TName : ISpanFormattable
     where TValue : ISpanFormattable
 {
-    private readonly IEnumerator<TName> _namesEnumerator;
+    private readonly IEnumerable<TName> _namesEnumerator;
     private readonly Func<int, TValue> _valueFunc;
     private readonly string _delimiter;
-    private readonly bool IsEmpty => _index == -1;
-    private int _index;
 
     public JoinableDbPropertyEqualVariablePropertyList(
         IEnumerable<TName> names,
         Func<int, TValue> valueFunc,
         string delimiter = ", ")
     {
-        _namesEnumerator = names.GetEnumerator();
+        _namesEnumerator = names;
         _valueFunc = valueFunc;
-        _index = !_namesEnumerator.MoveNext() ? -1 : 0;
         _delimiter = delimiter;
     }
 
@@ -35,26 +32,29 @@ public struct JoinableDbPropertyEqualVariablePropertyList<TName, TValue>
         IFormatProvider? provider)
     {
         charsWritten = 0;
-        if (IsEmpty)
+        using var e = _namesEnumerator.GetEnumerator();
+        if (!e.MoveNext())
             return true;
+
+        int index = 0;
 
         while (true)
         {
             bool success;
             int newWritten;
-            TValue value = _valueFunc(_index);
-            if (_index == 0)
+            TValue value = _valueFunc(index);
+            if (index == 0)
             {
                 success = destination.TryWrite(
                     provider,
-                    $"{_namesEnumerator.Current} = {value}",
+                    $"{e.Current} = {value}",
                     out newWritten);
             }
             else
             {
                 success = destination.TryWrite(
                     provider,
-                    $"{_delimiter}{_namesEnumerator.Current} = {value}",
+                    $"{_delimiter}{e.Current} = {value}",
                     out newWritten);
             }
 
@@ -64,13 +64,11 @@ public struct JoinableDbPropertyEqualVariablePropertyList<TName, TValue>
             charsWritten += newWritten;
             destination = destination[newWritten ..];
 
-            if (!_namesEnumerator.MoveNext())
+            if (!e.MoveNext())
                 return true;
-            _index++;
+            index++;
         }
     }
-
-    public void Dispose() => _namesEnumerator.Dispose();
 }
 
 public static partial class JoinableHelper
@@ -83,6 +81,6 @@ public static partial class JoinableHelper
         where TProperty : ISpanFormattable
         where TValue : ISpanFormattable
     {
-        return new(properties, valueFunc);
+        return new(properties, valueFunc, delimiter);
     }
 }

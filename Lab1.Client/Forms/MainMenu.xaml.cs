@@ -9,6 +9,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Lab1.DataLayer;
@@ -141,34 +144,31 @@ public sealed partial class MainMenuViewModel : ObservableObject
     private readonly SqlConnection _connection;
     private TableSchemaModel[] _tables = Array.Empty<TableSchemaModel>();
 
-    public int? CurrentTableSchemaIndex
+    [ObservableProperty]
+    private int? _currentTableSchemaIndex;
+
+    partial void OnCurrentTableSchemaIndexChanging(int? value)
     {
-        get => _model.CurrentTableSchemaIndex;
-        set
+        if (value is { } v)
         {
-            if (_model.CurrentTableSchemaIndex == value)
-                return;
-
-            if (value is { } v)
-                SelectTable(v);
-
-            else
-                _model.CurrentTableSchemaIndex = null;
+            SelectTable(v);
+            MoveToRowFireAndForget(0);
         }
+        IsTableSelected = value is not null;
     }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsTableSelected))]
+    [NotifyPropertyChangedFor(nameof(IsRowSelected))]
+    [NotifyPropertyChangedFor(nameof(ViewCurrentRowIndex))]
     private int? _currentTableRowIndex = null;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanMoveNextRow))]
-    [NotifyPropertyChangedFor(nameof(IsNotFirstRow))]
     private bool _isFirstRow = true;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanMovePreviousRow))]
-    [NotifyPropertyChangedFor(nameof(IsNotLastRow))]
     private bool _isLastRow = true;
 
     public IEnumerable<TableSchemaModel> TableSchemas => _tables;
@@ -183,12 +183,23 @@ public sealed partial class MainMenuViewModel : ObservableObject
     private CancellationTokenSource _cts;
     private readonly SemaphoreSlim _loadingOperationLock = new(1, 1);
 
+    [ObservableProperty]
+    private bool _isTableSelected;
+
     public bool CanMovePreviousRow => !IsFirstRow && !IsLoading;
-    public bool CanMoveNextRow => !IsFirstRow && !IsLoading;
-    public bool IsTableSelected => _model.CurrentTableSchemaIndex is not null;
-    public bool IsNotFirstRow => !IsFirstRow;
-    public bool IsNotLastRow => !IsLastRow;
+    public bool CanMoveNextRow => !IsLastRow && !IsLoading;
     public bool IsRowSelected => CurrentTableRowIndex is not null;
+
+    public int ViewCurrentRowIndex
+    {
+        get => CurrentTableRowIndex ?? 0;
+        set
+        {
+            if (CurrentTableRowIndex == value)
+                return;
+            MoveToRowFireAndForget(value);
+        }
+    }
 
     public ObservableCollection<ColumnViewModel> Columns => _columns;
 
@@ -416,8 +427,8 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
     private struct Cursor
     {
-        public bool FoundStart;
-        public bool FoundEnd;
+        public bool FoundPrevious;
+        public bool FoundNext;
         public bool FoundElement;
     }
 
@@ -445,13 +456,13 @@ public sealed partial class MainMenuViewModel : ObservableObject
             long rowNumber = reader.GetInt64(0);
             if (rowNumber < rowIndex)
             {
-                Debug.Assert(!cursor.FoundStart);
-                cursor.FoundStart = true;
+                Debug.Assert(!cursor.FoundPrevious);
+                cursor.FoundPrevious = true;
             }
             else if (rowNumber > rowIndex)
             {
-                Debug.Assert(!cursor.FoundEnd);
-                cursor.FoundEnd = true;
+                Debug.Assert(!cursor.FoundNext);
+                cursor.FoundNext = true;
             }
             else
             {
@@ -466,15 +477,15 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
             for (int i = 0; i < columnValues.Count; i++)
             {
-                var value = reader.GetValue(i);
+                var value = reader.GetValue(i + 1);
                 _model.ColumnValues[i] = value.ToString() ?? "";
             }
         }
 
         void Reset()
         {
-            IsLastRow = !cursor.FoundEnd;
-            IsFirstRow = !cursor.FoundStart;
+            IsLastRow = !cursor.FoundNext;
+            IsFirstRow = !cursor.FoundPrevious;
 
             if (cursor.FoundElement)
             {
@@ -512,19 +523,15 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
         await command.ExecuteNonQueryAsync(_loadingCancellationToken);
 
-        if (IsLastRow)
+        if (IsLastRow && IsFirstRow)
         {
-            int rowIndex = GetOffsetCurrentIndexWithFallback(-1);
-            await MoveToRow(rowIndex);
-        }
-        else if (IsFirstRow)
-        {
-            int rowIndex = GetOffsetCurrentIndexWithFallback(1);
-            await MoveToRow(rowIndex);
+            CurrentTableRowIndex = null;
         }
         else
         {
-            CurrentTableRowIndex = null;
+            int direction = IsLoading ? -1 : 1;
+            int rowIndex = GetOffsetCurrentIndexWithFallback(direction);
+            await MoveToRow(rowIndex);
         }
     }
 
@@ -542,7 +549,42 @@ public sealed partial class MainMenuViewModel : ObservableObject
             _model.ColumnValues);
         command.Parameters.AddRange(parameters);
 
-        int rowIndex = (int) (long) await command.ExecuteScalarAsync(_loadingCancellationToken);
+        int rowIndex = await ExecuteBatchAndReadRowIndex();
+        async Task<int> ExecuteBatchAndReadRowIndex()
+        {
+            return (int) (long) await command.ExecuteScalarAsync(_loadingCancellationToken);
+        }
+
+        #if false
+        async Task<int> ExecuteBatchAndReadRowIndex()
+        {
+            using var reader = await command.ExecuteReaderAsync(_loadingCancellationToken);
+            while (true)
+            {
+                if (reader.GetName(0) != QueryBuilderHelper.RowNumberColumnName)
+                    continue;
+                if (reader.FieldCount != 1)
+                    continue;
+                bool isNext = await reader.NextResultAsync(_loadingCancellationToken);
+                if (!isNext)
+                    throw new InvalidOperationException("Expected another result.");
+                break;
+            }
+            bool hasRow = await reader.ReadAsync(_loadingCancellationToken);
+            if (!hasRow)
+                throw new InvalidOperationException("Expected a row with the index.");
+            int result = (int) reader.GetInt64(0);
+            hasRow = await reader.ReadAsync(_loadingCancellationToken);
+            if (hasRow)
+                throw new InvalidOperationException("Expected only one row.");
+
+            while (await reader.NextResultAsync(_loadingCancellationToken))
+            {
+            }
+
+            return result;
+        }
+        #endif
 
         // Let's just not bother and reload the row with a separate query,
         // it's just so much simpler.
@@ -608,5 +650,16 @@ public sealed partial class MainMenu : Window
     {
         DataContext = viewModel;
         InitializeComponent();
+    }
+
+    private void TextBox_KeyEnterUpdate(object sender, KeyEventArgs eventArgs)
+    {
+        if (eventArgs.Key != Key.Enter)
+            return;
+
+        var textBox = (TextBox) sender;
+        var property = TextBox.TextProperty;
+        var binding = BindingOperations.GetBindingExpression(textBox, property);
+        binding?.UpdateSource();
     }
 }

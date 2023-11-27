@@ -10,24 +10,20 @@ public readonly struct JoinableDbPropertyList<T>
         _names = names;
     }
 
-    public FormattableListState Prefix(string? prefix) => new(prefix, this);
+    public FormattableList Prefix(string? prefix) => new(prefix, this);
 
 
-    public struct FormattableListState : ISpanFormattable, IDisposable
+    public readonly struct FormattableList : ISpanFormattable
     {
         private readonly string? _prefix;
-        private readonly IEnumerator<T> _namesEnumerator;
-        private readonly bool _isEmpty;
-        private bool _isFirst;
+        private readonly IEnumerable<T> _namesEnumerator;
 
-        internal FormattableListState(
+        internal FormattableList(
             string? prefix,
             JoinableDbPropertyList<T> joinableDbPropertyList)
         {
             _prefix = prefix;
-            _namesEnumerator = joinableDbPropertyList._names.GetEnumerator();
-            _isEmpty = !_namesEnumerator.MoveNext();
-            _isFirst = true;
+            _namesEnumerator = joinableDbPropertyList._names;
         }
 
         public string ToString(string? format, IFormatProvider? formatProvider)
@@ -42,15 +38,17 @@ public readonly struct JoinableDbPropertyList<T>
             IFormatProvider? provider)
         {
             charsWritten = 0;
-            if (_isEmpty)
-                return true;
 
-            while (true)
+            using var e = _namesEnumerator.GetEnumerator();
+            bool isFirst = true;
+
+            while (e.MoveNext())
             {
                 bool success;
                 int newWritten;
+                int charsWrittenLocal = 0;
 
-                if (!_isFirst)
+                if (!isFirst)
                 {
                     success = destination.TryWrite(
                         provider,
@@ -59,7 +57,7 @@ public readonly struct JoinableDbPropertyList<T>
                     if (!success)
                         return false;
 
-                    charsWritten += newWritten;
+                    charsWrittenLocal += newWritten;
                     destination = destination[newWritten ..];
                 }
 
@@ -73,11 +71,11 @@ public readonly struct JoinableDbPropertyList<T>
                     if (!success)
                         return false;
 
-                    charsWritten += newWritten;
+                    charsWrittenLocal += newWritten;
                     destination = destination[newWritten ..];
                 }
 
-                var current = _namesEnumerator.Current;
+                var current = e.Current;
                 if (current is IRequiresSquareBrackets { RequiresSquareBrackets: false })
                 {
                     success = destination.TryWrite(
@@ -88,7 +86,7 @@ public readonly struct JoinableDbPropertyList<T>
                     if (!success)
                         return false;
 
-                    charsWritten += newWritten;
+                    charsWrittenLocal += newWritten;
                     destination = destination[newWritten ..];
                 }
                 else
@@ -101,18 +99,15 @@ public readonly struct JoinableDbPropertyList<T>
                     if (!success)
                         return false;
 
-                    charsWritten += newWritten;
+                    charsWrittenLocal += newWritten;
                     destination = destination[newWritten ..];
                 }
 
-                _isFirst = false;
-
-                if (!_namesEnumerator.MoveNext())
-                    return true;
+                isFirst = false;
+                charsWritten += charsWrittenLocal;
             }
+            return true;
         }
-
-        public void Dispose() => _namesEnumerator.Dispose();
     }
 }
 
@@ -121,7 +116,7 @@ public readonly struct ValueAsFormattable : ISpanFormattable, IRequiresSquareBra
     private readonly string _value;
     private readonly bool _needsSquareBrackets;
 
-    public ValueAsFormattable(string value, bool needsSquareBrackets)
+    public ValueAsFormattable(string value, bool needsSquareBrackets = true)
     {
         _value = value;
         _needsSquareBrackets = needsSquareBrackets;
