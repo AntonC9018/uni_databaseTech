@@ -16,12 +16,15 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Lab1.DataLayer;
 using Microsoft.Data.SqlClient;
+using DataSet = System.Data.DataSet;
 
 namespace Laborator1;
 
 public sealed partial class MainMenuModel : ObservableObject
 {
     public TableModel[]? TableModels;
+    public DataSet? DataSet;
+    public readonly List<SqlDataAdapter> Adapters = new();
 
     [ObservableProperty]
     private int? _currentTableSchemaIndex = null;
@@ -36,6 +39,28 @@ public sealed partial class MainMenuModel : ObservableObject
                 return null;
             if (CurrentTableSchemaIndex is { } index)
                 return TableModels[index];
+            return null;
+        }
+    }
+
+    public DataTable? CurrentDataTable
+    {
+        get
+        {
+            if (DataSet is null)
+                return null;
+            if (CurrentTableSchemaIndex is { } index)
+                return DataSet.Tables[index];
+            return null;
+        }
+    }
+
+    public SqlDataAdapter? CurrentDataAdapter
+    {
+        get
+        {
+            if (CurrentTableSchemaIndex is { } index)
+                return Adapters[index];
             return null;
         }
     }
@@ -65,7 +90,6 @@ public sealed class TableSchemaModel
 
     public string Name => Model.Name.Name;
     public string Schema => Model.Name.Schema;
-    public IEnumerable<ColumnSchema> Columns => Model.Columns;
     public FullyQualifiedName FullyQualifiedName => new(Schema, Name);
     public override string ToString() => FullyQualifiedName.ToString();
 }
@@ -262,6 +286,24 @@ public sealed partial class MainMenuViewModel : ObservableObject
             }
 
             _tables = tables.Select(t => new TableSchemaModel(t)).ToArray();
+
+            var set = new DataSet();
+            var sb = new StringBuilder();
+            for (int i = 0; i < _tables.Length; i++)
+            {
+                var table = _tables[i].Model;
+                var dataTable = set.Tables.Add(table.Name.Name);
+                foreach (var column in _tables[i].Model.Columns)
+                    dataTable.Columns.Add(column.Name, column.Type);
+
+                var adapter = new SqlDataAdapter($"SELECT * FROM {table.FullyQualifiedName}", _connection);
+                adapter.UpdateCommand = QueryBuilderHelper.UpdateRow.CreateCommand(sb, table);
+                adapter.InsertCommand = QueryBuilderHelper.InsertRow.CreateCommand(sb, table);
+                adapter.DeleteCommand = QueryBuilderHelper.DeleteRow.CreateCommand(sb, table);
+                adapter.Fill(dataTable);
+            }
+            _model.DataSet = set;
+
             _model.TableModels = tables;
             if (_tables.Length > 0)
                 SelectTable(0);
@@ -425,103 +467,46 @@ public sealed partial class MainMenuViewModel : ObservableObject
         return table;
     }
 
-    private struct Cursor
+    private Task<bool> MoveToRow(int rowIndex)
     {
-        public bool FoundPrevious;
-        public bool FoundNext;
-        public bool FoundElement;
-    }
+        var dataTable = _model.CurrentDataTable;
+        Debug.Assert(dataTable is not null);
+        int rowCount = dataTable.Rows.Count;
 
-    private async Task<bool> MoveToRow(int rowIndex)
-    {
-        var table = GetCurrentTable();
-        var command = _connection.CreateCommand();
+        IsLastRow = rowIndex == rowCount - 1;
+        IsFirstRow = rowIndex == 0;
+
+        if (rowIndex >= 0 && rowIndex < rowCount)
         {
-            var stringBuilder = new StringBuilder();
-            QueryBuilderHelper.BuildGetRowAtIndexQuery(stringBuilder, table.Model);
-            command.CommandText = stringBuilder.ToString();
-        }
-        var parameters = QueryBuilderHelper.GetParametersForGetRowAtIndexQuery(rowIndex);
-        command.Parameters.AddRange(parameters);
-
-        await using var reader = await command.ExecuteReaderAsync(_loadingCancellationToken);
-        Cursor cursor = new();        
-        
-        for (int iteration = 0; iteration < 3; iteration++)
-        {
-            bool moved = await reader.ReadAsync(_loadingCancellationToken);
-            if (!moved)
-                break;
-
-            long rowNumber = reader.GetInt64(0);
-            if (rowNumber < rowIndex)
-            {
-                Debug.Assert(!cursor.FoundPrevious);
-                cursor.FoundPrevious = true;
-            }
-            else if (rowNumber > rowIndex)
-            {
-                Debug.Assert(!cursor.FoundNext);
-                cursor.FoundNext = true;
-            }
-            else
-            {
-                Debug.Assert(!cursor.FoundElement);
-                cursor.FoundElement = true;
-            }
-
-            if (rowNumber != rowIndex)
-                continue;
-
+            var row = dataTable.Rows[rowIndex];
             var columnValues = _model.ColumnValues;
 
             for (int i = 0; i < columnValues.Count; i++)
             {
-                var value = reader.GetValue(i + 1);
+                var value = row[i];
                 _model.ColumnValues[i] = value.ToString() ?? "";
             }
+
+            CurrentTableRowIndex = rowIndex;
         }
-
-        void Reset()
+        else
         {
-            IsLastRow = !cursor.FoundNext;
-            IsFirstRow = !cursor.FoundPrevious;
-
-            if (cursor.FoundElement)
-            {
-                CurrentTableRowIndex = rowIndex;
-                return;
-            }
-
-            // foreach (ref var column in CollectionsMarshal.AsSpan(_model.ColumnValues))
-            //     column = "";
-
             CurrentTableRowIndex = null;
         }
-
-        {
-            Reset();
-            _model.TriggerAllValuesChanged();
-        }
-        return true;
+        _model.TriggerAllValuesChanged();
+        return Task.FromResult(true);
     }
 
     private async Task DoDeleteCurrent()
     {
-        var table = GetCurrentTable();
-        var command = _connection.CreateCommand();
-        {
-            var stringBuilder = new StringBuilder();
-            QueryBuilderHelper.BuildDeleteRowWithKeyQuery(stringBuilder, table.Model);
-            command.CommandText = stringBuilder.ToString();
-        }
+        var dataTable = _model.CurrentDataTable;
+        Debug.Assert(dataTable is not null);
 
-        var parameters = QueryBuilderHelper.GetParametersForDeleteRowWithKeyQuery(
-            table.Model,
-            _model.ColumnValues);
-        command.Parameters.AddRange(parameters);
+        Debug.Assert(CurrentTableRowIndex is not null);
+        int currentIndex = CurrentTableRowIndex!.Value;
 
-        await command.ExecuteNonQueryAsync(_loadingCancellationToken);
+        var row = dataTable.Rows[currentIndex];
+        row.Delete();
 
         if (IsLastRow && IsFirstRow)
         {
@@ -537,75 +522,29 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
     private async Task DoInsertCurrent()
     {
-        var table = GetCurrentTable();
-        var command = _connection.CreateCommand();
-        {
-            var stringBuilder = new StringBuilder();
-            QueryBuilderHelper.BuildInsertRowWithValuesQuery(stringBuilder, table.Model);
-            command.CommandText = stringBuilder.ToString();
-        }
-        var parameters = QueryBuilderHelper.GetParametersForInsertRowWithValuesQuery(
-            table.Model,
-            _model.ColumnValues);
-        command.Parameters.AddRange(parameters);
+        var dataTable = _model.CurrentDataTable;
+        Debug.Assert(dataTable is not null);
 
-        int rowIndex = await ExecuteBatchAndReadRowIndex();
-        async Task<int> ExecuteBatchAndReadRowIndex()
+        var row = dataTable.NewRow();
+        for (int i = 0; i < _model.ColumnValues.Count; i++)
         {
-            return (int) (long) await command.ExecuteScalarAsync(_loadingCancellationToken);
+            var value = _model.ColumnValues[i];
+            row[i] = value;
         }
 
-        #if false
-        async Task<int> ExecuteBatchAndReadRowIndex()
-        {
-            using var reader = await command.ExecuteReaderAsync(_loadingCancellationToken);
-            while (true)
-            {
-                if (reader.GetName(0) != QueryBuilderHelper.RowNumberColumnName)
-                    continue;
-                if (reader.FieldCount != 1)
-                    continue;
-                bool isNext = await reader.NextResultAsync(_loadingCancellationToken);
-                if (!isNext)
-                    throw new InvalidOperationException("Expected another result.");
-                break;
-            }
-            bool hasRow = await reader.ReadAsync(_loadingCancellationToken);
-            if (!hasRow)
-                throw new InvalidOperationException("Expected a row with the index.");
-            int result = (int) reader.GetInt64(0);
-            hasRow = await reader.ReadAsync(_loadingCancellationToken);
-            if (hasRow)
-                throw new InvalidOperationException("Expected only one row.");
-
-            while (await reader.NextResultAsync(_loadingCancellationToken))
-            {
-            }
-
-            return result;
-        }
-        #endif
+        dataTable.Rows.Add(row);
 
         // Let's just not bother and reload the row with a separate query,
         // it's just so much simpler.
-        await MoveToRow(rowIndex);
+        await MoveToRow(dataTable.Rows.Count - 1);
     }
 
-    private async Task DoSaveCurrent()
+    private Task DoSaveCurrent()
     {
-        var table = GetCurrentTable();
-        var command = _connection.CreateCommand();
-        {
-            var stringBuilder = new StringBuilder();
-            QueryBuilderHelper.BuildUpdateRowQuery(stringBuilder, table.Model);
-            command.CommandText = stringBuilder.ToString();
-        }
-        var parameters = QueryBuilderHelper.GetParametersForUpdateRowQuery(
-            table.Model,
-            _model.ColumnValues);
-        command.Parameters.AddRange(parameters);
-
-        await command.ExecuteNonQueryAsync(_loadingCancellationToken);
+        var dataTable = _model.CurrentDataTable;
+        Debug.Assert(dataTable is not null);
+        dataTable.AcceptChanges();
+        return Task.CompletedTask;
     }
 
     private void SelectTable(int tableIndex)
@@ -623,7 +562,6 @@ public sealed partial class MainMenuViewModel : ObservableObject
             _model.ColumnValues[i] = "";
         }
 
-        // Application.Current.Dispatcher.InvokeAsync(() =>
         {
             int c = Math.Min(prevCount, _columns.Count);
             for (int i = 0; i < c; i++)
@@ -639,7 +577,6 @@ public sealed partial class MainMenuViewModel : ObservableObject
             _model.CurrentTableSchemaIndex = tableIndex;
             _model.TriggerAllValuesChanged();
         }
-        // );
     }
 }
 
