@@ -101,6 +101,11 @@
                 IsEnabled="{Binding IsRowSelected}"
                 Command="{Binding DeleteCurrentCommand}"
                 />
+            <Button
+                Content="Save All"
+                IsEnabled="{Binding IsAnyModified}"
+                Command="{Binding SaveAllCommand}"
+                />
         </StackPanel>
     </DockPanel>
 </Window>

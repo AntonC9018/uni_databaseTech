@@ -213,6 +213,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
     public bool CanMovePreviousRow => !IsFirstRow && !IsLoading;
     public bool CanMoveNextRow => !IsLastRow && !IsLoading;
     public bool IsRowSelected => CurrentTableRowIndex is not null;
+    public bool IsAnyModified => true;
 
     public int ViewCurrentRowIndex
     {
@@ -296,11 +297,18 @@ public sealed partial class MainMenuViewModel : ObservableObject
                 foreach (var column in _tables[i].Model.Columns)
                     dataTable.Columns.Add(column.Name, column.Type);
 
-                var adapter = new SqlDataAdapter($"SELECT * FROM {table.FullyQualifiedName}", _connection);
-                adapter.UpdateCommand = QueryBuilderHelper.UpdateRow.CreateCommand(sb, table);
-                adapter.InsertCommand = QueryBuilderHelper.InsertRow.CreateCommand(sb, table);
-                adapter.DeleteCommand = QueryBuilderHelper.DeleteRow.CreateCommand(sb, table);
+                var allColumns = table.Columns
+                    .Select(c => c.Name)
+                    .JoinableDbPropertyList()
+                    .Prefix(null);
+                var adapter = new SqlDataAdapter(
+                    $"SELECT {allColumns} FROM {table.FullyQualifiedName}",
+                    _connection);
+                adapter.UpdateCommand = QueryBuilderHelper.UpdateRow.CreateCommand(_connection, sb, table);
+                adapter.InsertCommand = QueryBuilderHelper.InsertRow.CreateCommand(_connection, sb, table);
+                adapter.DeleteCommand = QueryBuilderHelper.DeleteRow.CreateCommand(_connection, sb, table);
                 adapter.Fill(dataTable);
+                _model.Adapters.Add(adapter);
             }
             _model.DataSet = set;
 
@@ -457,16 +465,6 @@ public sealed partial class MainMenuViewModel : ObservableObject
         });
     }
 
-    private TableSchemaModel GetCurrentTable()
-    {
-        int? maybeSchemaIndex = _model.CurrentTableSchemaIndex;
-        Debug.Assert(maybeSchemaIndex is not null);
-        int schemaIndex = maybeSchemaIndex.Value;
-
-        var table = _tables[schemaIndex];
-        return table;
-    }
-
     private Task<bool> MoveToRow(int rowIndex)
     {
         var dataTable = _model.CurrentDataTable;
@@ -508,6 +506,8 @@ public sealed partial class MainMenuViewModel : ObservableObject
         var row = dataTable.Rows[currentIndex];
         row.Delete();
 
+        FlushChangesToDatabase();
+
         if (IsLastRow && IsFirstRow)
         {
             CurrentTableRowIndex = null;
@@ -518,6 +518,14 @@ public sealed partial class MainMenuViewModel : ObservableObject
             int rowIndex = GetOffsetCurrentIndexWithFallback(direction);
             await MoveToRow(rowIndex);
         }
+    }
+
+    private void FlushChangesToDatabase()
+    {
+        var dataTable = _model.CurrentDataTable;
+        Debug.Assert(dataTable is not null);
+
+        _model.CurrentDataAdapter!.Update(dataTable);
     }
 
     private async Task DoInsertCurrent()
@@ -533,6 +541,8 @@ public sealed partial class MainMenuViewModel : ObservableObject
         }
 
         dataTable.Rows.Add(row);
+        CurrentTableRowIndex = dataTable.Rows.Count - 1;
+        FlushChangesToDatabase();
 
         // Let's just not bother and reload the row with a separate query,
         // it's just so much simpler.
@@ -541,10 +551,32 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
     private Task DoSaveCurrent()
     {
+        // Convert the strings of all current input values
+        // into the right object types and set them on the dataTable's current row.
         var dataTable = _model.CurrentDataTable;
         Debug.Assert(dataTable is not null);
-        dataTable.AcceptChanges();
+
+        var row = dataTable.Rows[CurrentTableRowIndex!.Value];
+        for (int i = 0; i < _model.ColumnValues.Count; i++)
+        {
+            var value = _model.ColumnValues[i];
+            var columnSchema = _model.ColumnSchemas[i];
+            var convertedValue = Convert.ChangeType(value, columnSchema.Type);
+            row[i] = convertedValue;
+        }
+
+        FlushChangesToDatabase();
+
         return Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    public void SaveAll()
+    {
+        var dataTable = _model.CurrentDataTable;
+        Debug.Assert(dataTable is not null);
+
+        dataTable.AcceptChanges();
     }
 
     private void SelectTable(int tableIndex)

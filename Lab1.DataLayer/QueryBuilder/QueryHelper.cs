@@ -15,13 +15,15 @@ public static class QueryBuilderExtensions
 {
     public static SqlCommand CreateCommand(
         this IQueryBuilder queryBuilder,
+        SqlConnection connection,
         StringBuilder sb,
         TableModel tableSchema)
     {
         queryBuilder.Build(sb, tableSchema);
         var queryString = sb.ToString();
         sb.Clear();
-        var command = new SqlCommand(queryString);
+        var command = connection.CreateCommand();
+        command.CommandText = queryString;
         var parameters = queryBuilder.GetParameters(tableSchema);
         command.Parameters.AddRange(parameters);
         return command;
