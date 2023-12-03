@@ -422,8 +422,6 @@ public sealed partial class DemoForm : Form
 
             AddEditActionTimer("Submit", () => dataGridView.EndEdit());
             AddEditActionTimer("Cancel", () => dataGridView.CancelEdit());
-
-            // Set up two timer with text countdown, that one submits and other cancels
         }, dataGridView);
 
         tab.Controls.Add(pageTable);
