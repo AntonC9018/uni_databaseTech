@@ -1,22 +1,6 @@
 using System.ComponentModel;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ReferatDemo;
-
-public enum Gender
-{
-    Male,
-    Female,
-    Other,
-}
-
-public sealed partial class RowModel : ObservableObject
-{
-    [ObservableProperty] private string? _firstName;
-    [ObservableProperty] private string? _lastName;
-    [ObservableProperty] private int _age;
-    [ObservableProperty] private Gender _gender;
-}
 
 public enum DockPosition
 {
@@ -39,56 +23,14 @@ public enum DockPosition
 public sealed partial class DemoForm : Form
 {
     private readonly BindingList<RowModel> _rows = new();
-    private readonly BindingSource _bindingSource = new();
-
-    private static readonly string[] _Names =
-    {
-        "Alex",
-        "John",
-        "Mary",
-        "Jane",
-        "Bob",
-        "Alice",
-        "Eve",
-        "Carol",
-    };
-
-    private static readonly string[] _LastNames =
-    {
-        "Smith",
-        "Johnson",
-        "Williams",
-        "Jones",
-        "Brown",
-        "Davis",
-        "Miller",
-        "Wilson",
-    };
-
-    private static IEnumerable<RowModel> GenerateRandomData(int count)
-    {
-        var random = new Random();
-        for (int i = 0; i < count; i++)
-        {
-            var firstName = _Names[random.Next(_Names.Length)];
-            var lastName = _LastNames[random.Next(_LastNames.Length)];
-            var gender = (Gender) random.Next(3);
-            var age = random.Next(20, 60);
-            yield return new RowModel
-            {
-                FirstName = firstName,
-                LastName = lastName,
-                Gender = gender,
-                Age = age,
-            };
-        }
-    }
+    private readonly BindingSource _rowsBindingSource = new();
 
     public DemoForm()
     {
-        foreach (var row in GenerateRandomData(100))
+        var random = new Random();
+        foreach (var row in DataGenerationHelper.GenerateRandomData(random, 100))
             _rows.Add(row);
-        _bindingSource.DataSource = _rows;
+        _rowsBindingSource.DataSource = _rows;
 
         InitializeComponent();
 
@@ -108,36 +50,6 @@ public sealed partial class DemoForm : Form
             tabControl.TabPages.Add(tab);
             func(tab);
         }
-    }
-
-    private TableLayoutPanel CreateLayout(
-        Action<TableLayoutPanel> configureTop,
-        Control mainControl)
-    {
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            RowCount = 2,
-            ColumnCount = 1,
-            AutoSize = false,
-        };
-
-        var topPanel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            BackColor = Color.LightBlue,
-            ColumnCount = 1,
-            AutoSize = true,
-        };
-        layout.Controls.Add(topPanel);
-        configureTop(topPanel);
-
-        layout.Controls.Add(mainControl);
-
-        topPanel.SizeChanged += (_, _) => ResizeSingleColumnTableChildren(topPanel);
-        ResizeSingleColumnTableChildren(topPanel);
-
-        return layout;
     }
 
     private void InitializeAutoScrollDemo(TabPage tab)
@@ -294,7 +206,7 @@ public sealed partial class DemoForm : Form
         var dataGridView = new DataGridView
         {
             Dock = DockStyle.Fill,
-            DataSource = _bindingSource,
+            DataSource = _rowsBindingSource,
         };
 
         // Check box to toggle AutoSize
@@ -352,18 +264,49 @@ public sealed partial class DemoForm : Form
         tab.Controls.Add(pageTable);
     }
 
-    private static void ResizeSingleColumnTableChildren(TableLayoutPanel topPanel)
+    private TableLayoutPanel CreateLayout(
+        Action<TableLayoutPanel> configureTop,
+        Control mainControl)
     {
-        topPanel.SuspendLayout();
-
-        int childWidth = topPanel.ClientSize.Width;
-        childWidth -= topPanel.Margin.Horizontal;
-
-        foreach (var control in topPanel.Controls)
+        var layout = new TableLayoutPanel
         {
-            var c = (Control) control;
-            c.Width = childWidth;
+            Dock = DockStyle.Fill,
+            RowCount = 2,
+            ColumnCount = 1,
+            AutoSize = false,
+        };
+
+        var topPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            BackColor = Color.LightBlue,
+            ColumnCount = 1,
+            AutoSize = true,
+        };
+        layout.Controls.Add(topPanel);
+        configureTop(topPanel);
+
+        layout.Controls.Add(mainControl);
+
+        topPanel.SizeChanged += (_, _) => ResizeSingleColumnTableChildren(topPanel);
+        ResizeSingleColumnTableChildren(topPanel);
+
+        static void ResizeSingleColumnTableChildren(TableLayoutPanel topPanel)
+        {
+            topPanel.SuspendLayout();
+
+            int childWidth = topPanel.ClientSize.Width;
+            childWidth -= topPanel.Margin.Horizontal;
+
+            foreach (var control in topPanel.Controls)
+            {
+                var c = (Control) control;
+                c.Width = childWidth;
+            }
+            topPanel.ResumeLayout();
         }
-        topPanel.ResumeLayout();
+
+        return layout;
     }
+
 }
