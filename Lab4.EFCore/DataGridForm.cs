@@ -1,20 +1,23 @@
+using System.Collections;
 using System.Data;
 using System.Diagnostics;
-using Lab1.DataLayer;
+using System.Reflection;
+using lab4.EFCore;
+using Lab4.EFCore;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 
-namespace lab3;
+namespace lab4;
 
 public sealed partial class DataGridForm : Form
 {
-    private readonly SqlConnection _connection;
-    private SqlDataAdapter? _adapter;
-    private DataTable? _dataTable;
+    private readonly MyDbContext _dbContext;
     private readonly BindingSource _dataGridBindingSource;
+    private IList? _data;
 
-    public DataGridForm(SqlConnection connection)
+    public DataGridForm(MyDbContext dbContext)
     {
-        _connection = connection;
+        _dbContext = dbContext;
         _dataGridBindingSource = new BindingSource();
 
         InitializeComponent();
@@ -58,48 +61,40 @@ public sealed partial class DataGridForm : Form
         }
 
         {
-            foreach (var tableName in GetTableNames())
-            {
-                selectTableComboBox.Items.Add(tableName);
-            }
+            var tables = _dbContext.Model
+                .GetEntityTypes()
+                .Where(x => x.ClrType.Namespace == typeof(Category).Namespace)
+                .Select(x => x.GetTableName())
+                .Where(x => x is not null)
+                .ToList();
+            selectTableComboBox.DataSource = tables;
 
-            if (selectTableComboBox.Items.Count > 0)
-            {
-                selectTableComboBox.SelectedIndex = 0;
-            }
+            SelectTable(tables.FirstOrDefault());
         }
     }
 
-    private IEnumerable<string> GetTableNames()
-    {
-        var tableConstraints = TableConstraints.Create();
-        tableConstraints.Type = TableType.BaseTable;
-
-        var tablesTable = _connection.GetSchema("Tables", tableConstraints);
-        var rows = tablesTable.Rows;
-        int rowCount = rows.Count;
-        for (int i = 0; i < rowCount; i++)
-        {
-            var row = rows[i];
-            var tableInfo = TableInfoRow.Parse(row);
-            var fullyQualifiedName = new FullyQualifiedName(
-                tableInfo.Schema,
-                tableInfo.Name);
-            yield return fullyQualifiedName.ToString();
-        }
-    }
 
     private void FlushChangesToDatabase()
     {
-        Debug.Assert(_adapter is not null);
+        Debug.Assert(_data is not null);
         try
         {
-            _adapter.Update(_dataTable!);
+            _dbContext.SaveChanges();
         }
         catch (Exception e)
         {
             MessageBox.Show(e.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private static readonly MethodInfo _GetDataMethod = typeof(DataGridForm)
+        .GetMethod(nameof(QueryAllRowsInTable), BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+    private List<T> QueryAllRowsInTable<T>(string name)
+        where T : class
+    {
+        var query = _dbContext.Set<T>(name);
+        return query.ToList();
     }
 
     private void SelectTable(string? tableName)
@@ -109,10 +104,18 @@ public sealed partial class DataGridForm : Form
             _dataGridBindingSource.DataSource = null;
             return;
         }
-        _adapter = new SqlDataAdapter($"SELECT * FROM {tableName}", _connection);
-        _ = new SqlCommandBuilder(_adapter);
-        _dataTable = new DataTable();
-        _adapter.Fill(_dataTable);
-        _dataGridBindingSource.DataSource = _dataTable;
+
+        var model = _dbContext.Model;
+        var entityType = model
+            .GetEntityTypes()
+            .FirstOrDefault(x => x.GetTableName() == tableName);
+        Debug.Assert(entityType is not null);
+        _dbContext.ChangeTracker.Clear();
+
+        _data = (IList) _GetDataMethod
+            .MakeGenericMethod(entityType.ClrType)
+            .Invoke(this, new object?[] { entityType.Name })!;
+
+        _dataGridBindingSource.DataSource = _data;
     }
 }
