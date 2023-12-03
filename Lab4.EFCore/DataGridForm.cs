@@ -1,10 +1,8 @@
 using System.Collections;
-using System.Data;
 using System.Diagnostics;
 using System.Reflection;
 using lab4.EFCore;
 using Lab4.EFCore;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace lab4;
