@@ -10,6 +10,13 @@ public enum DockPosition
     Right,
 }
 
+public sealed class NamedImage
+{
+    public required string Name { get; init; }
+    public required Image Image { get; init; }
+    public override string ToString() => Name;
+}
+
 // A demo form that illustrates the following properties and methods:
 
 // BackgroundColor
@@ -44,6 +51,7 @@ public sealed partial class DemoForm : Form
             {
                 (InitializeAutoScrollDemo, "AutoScroll"),
                 (InitializeAutoSizeDemo, "AutoSize"),
+                (InitializeBackgroundDemo, "Background"),
             })
         {
             var tab = new TabPage(name);
@@ -260,6 +268,85 @@ public sealed partial class DemoForm : Form
                 topPanel.Controls.Add(columnsCombo);
             }
         }, dataGridView);
+
+        tab.Controls.Add(pageTable);
+    }
+
+    private void InitializeBackgroundDemo(TabPage tab)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+        };
+
+        var pageTable = CreateLayout(topPanel =>
+        {
+            var colorComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+            };
+            foreach (var color in new[]
+            {
+                Color.Transparent,
+                Color.Red,
+                Color.Green,
+                Color.Blue,
+            })
+            {
+                colorComboBox.Items.Add(color);
+            }
+            colorComboBox.SelectedItem = Color.Transparent;
+            topPanel.Controls.Add(colorComboBox);
+
+            var imageComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+            };
+            imageComboBox.Items.Add("");
+            foreach (var imageName in new[]
+            {
+                "geist.jpeg",
+                "mossy_stone_bricks.png",
+            })
+            {
+                var imagePath = Path.Combine("Resources", imageName);
+                var image = Image.FromFile(imagePath);
+                imageComboBox.Items.Add(new NamedImage
+                {
+                    Name = imageName,
+                    Image = image,
+                });
+            }
+            imageComboBox.SelectedItem = null;
+            topPanel.Controls.Add(imageComboBox);
+
+            var layoutComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+            };
+            foreach (var layout in Enum.GetValues<ImageLayout>())
+            {
+                layoutComboBox.Items.Add(layout);
+            }
+            layoutComboBox.SelectedItem = ImageLayout.None;
+            topPanel.Controls.Add(layoutComboBox);
+
+            colorComboBox.SelectedValueChanged += (_, _) =>
+            {
+                var color = (Color) colorComboBox.SelectedItem;
+                panel.BackColor = color;
+            };
+            imageComboBox.SelectedValueChanged += (_, _) =>
+            {
+                var image = imageComboBox.SelectedItem as NamedImage;
+                panel.BackgroundImage = image?.Image;
+            };
+            layoutComboBox.SelectedValueChanged += (_, _) =>
+            {
+                var layout = (ImageLayout) layoutComboBox.SelectedItem!;
+                panel.BackgroundImageLayout = layout;
+            };
+        }, panel);
 
         tab.Controls.Add(pageTable);
     }
