@@ -2,27 +2,7 @@ using System.ComponentModel;
 
 namespace ReferatDemo;
 
-public enum DockPosition
-{
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
-public sealed class NamedImage
-{
-    public required string Name { get; init; }
-    public required Image Image { get; init; }
-    public override string ToString() => Name;
-}
-
 // A demo form that illustrates the following properties and methods:
-
-// BackgroundColor
-// BackgroundImage
-// BackgroundImageLayout
-// BorderStyle
 
 // BeginEdit
 // CancelEdit
@@ -233,40 +213,14 @@ public sealed partial class DemoForm : Form
                 topPanel.Controls.Add(autoSizeCheckBox);
             }
 
-            AutoSizeComboBox(
+            ComboBoxForEachEnum(
+                tab.Controls,
                 mode => dataGridView.AutoSizeColumnsMode = mode,
                 DataGridViewAutoSizeColumnsMode.AllCells);
-            AutoSizeComboBox(
+            ComboBoxForEachEnum(
+                tab.Controls,
                 mode => dataGridView.AutoSizeRowsMode = mode,
                 DataGridViewAutoSizeRowsMode.AllCells);
-
-            void AutoSizeComboBox<T>(Action<T> setter, T defaultValue = default)
-                where T : struct, Enum
-            {
-                var label = new Label
-                {
-                    Text = typeof(T).Name,
-                };
-                topPanel.Controls.Add(label);
-
-                var autoSizeOptions = Enum.GetValues<T>();
-                var autoSizeOptionsAsObjects = autoSizeOptions.Cast<object>().ToArray();
-
-                var columnsCombo = new ComboBox
-                {
-                    DropDownStyle = ComboBoxStyle.DropDownList,
-                };
-                columnsCombo.DataSource = autoSizeOptionsAsObjects;
-                columnsCombo.SelectedValue = defaultValue;
-                setter(defaultValue);
-                columnsCombo.SelectedIndexChanged += (source, _) =>
-                {
-                    var combo = (ComboBox) source!;
-                    var item = combo.SelectedItem;
-                    setter((T) item!);
-                };
-                topPanel.Controls.Add(columnsCombo);
-            }
         }, dataGridView);
 
         tab.Controls.Add(pageTable);
@@ -281,77 +235,74 @@ public sealed partial class DemoForm : Form
 
         var pageTable = CreateLayout(topPanel =>
         {
-            var colorComboBox = new ComboBox
             {
-                DropDownStyle = ComboBoxStyle.DropDownList,
-            };
-            foreach (var color in new[]
-            {
-                Color.Transparent,
-                Color.Red,
-                Color.Green,
-                Color.Blue,
-            })
-            {
-                colorComboBox.Items.Add(color);
-            }
-            colorComboBox.SelectedItem = Color.Transparent;
-            topPanel.Controls.Add(colorComboBox);
-
-            var imageComboBox = new ComboBox
-            {
-                DropDownStyle = ComboBoxStyle.DropDownList,
-            };
-            imageComboBox.Items.Add("");
-            foreach (var imageName in new[]
-            {
-                "geist.jpeg",
-                "mossy_stone_bricks.png",
-            })
-            {
-                var imagePath = Path.Combine("Resources", imageName);
-                var image = Image.FromFile(imagePath);
-                imageComboBox.Items.Add(new NamedImage
+                var colorComboBox = new ComboBox
                 {
-                    Name = imageName,
-                    Image = image,
-                });
-            }
-            imageComboBox.SelectedItem = null;
-            topPanel.Controls.Add(imageComboBox);
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                };
+                foreach (var color in new[]
+                    {
+                        Color.Transparent,
+                        Color.Red,
+                        Color.Green,
+                        Color.Blue,
+                    })
+                {
+                    colorComboBox.Items.Add(color);
+                }
 
-            var layoutComboBox = new ComboBox
-            {
-                DropDownStyle = ComboBoxStyle.DropDownList,
-            };
-            foreach (var layout in Enum.GetValues<ImageLayout>())
-            {
-                layoutComboBox.Items.Add(layout);
+                colorComboBox.SelectedItem = Color.Transparent;
+                topPanel.Controls.Add(colorComboBox);
+                colorComboBox.SelectedValueChanged += (_, _) =>
+                {
+                    var color = (Color)colorComboBox.SelectedItem;
+                    panel.BackColor = color;
+                };
             }
-            layoutComboBox.SelectedItem = ImageLayout.None;
-            topPanel.Controls.Add(layoutComboBox);
+            {
+                var imageComboBox = new ComboBox
+                {
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                };
+                imageComboBox.Items.Add("None");
+                foreach (var imageName in new[]
+                {
+                    "geist.jpeg",
+                    "mossy_stone_bricks.png",
+                })
+                {
+                    var imagePath = Path.Combine("Resources", imageName);
+                    var image = Image.FromFile(imagePath);
+                    imageComboBox.Items.Add(new NamedImage
+                    {
+                        Name = imageName,
+                        Image = image,
+                    });
+                }
+                imageComboBox.SelectedItem = null;
+                topPanel.Controls.Add(imageComboBox);
+                imageComboBox.SelectedValueChanged += (_, _) =>
+                {
+                    var image = imageComboBox.SelectedItem as NamedImage;
+                    panel.BackgroundImage = image?.Image;
+                };
+            }
 
-            colorComboBox.SelectedValueChanged += (_, _) =>
-            {
-                var color = (Color) colorComboBox.SelectedItem;
-                panel.BackColor = color;
-            };
-            imageComboBox.SelectedValueChanged += (_, _) =>
-            {
-                var image = imageComboBox.SelectedItem as NamedImage;
-                panel.BackgroundImage = image?.Image;
-            };
-            layoutComboBox.SelectedValueChanged += (_, _) =>
-            {
-                var layout = (ImageLayout) layoutComboBox.SelectedItem!;
-                panel.BackgroundImageLayout = layout;
-            };
+            ComboBoxForEachEnum(
+                topPanel.Controls,
+                layout => panel.BackgroundImageLayout = layout,
+                ImageLayout.None);
+
+            ComboBoxForEachEnum(
+                topPanel.Controls,
+                style => panel.BorderStyle = style,
+                BorderStyle.None);
         }, panel);
 
         tab.Controls.Add(pageTable);
     }
 
-    private TableLayoutPanel CreateLayout(
+    private static TableLayoutPanel CreateLayout(
         Action<TableLayoutPanel> configureTop,
         Control mainControl)
     {
@@ -396,4 +347,57 @@ public sealed partial class DemoForm : Form
         return layout;
     }
 
+    private static ComboBox ComboBoxForEachEnum<T>(
+        Control.ControlCollection parent,
+        Action<T> setter,
+        T defaultValue = default)
+
+        where T : struct, Enum
+    {
+        var label = new Label
+        {
+            Text = typeof(T).Name,
+        };
+        parent.Add(label);
+
+        var comboBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+        };
+
+        {
+            var autoSizeOptions = Enum.GetValues<T>();
+            foreach (var option in autoSizeOptions)
+            {
+                comboBox.Items.Add(option);
+            }
+        }
+
+        comboBox.SelectedItem = defaultValue;
+        setter(defaultValue);
+        comboBox.SelectedIndexChanged += (source, _) =>
+        {
+            var combo = (ComboBox) source!;
+            var item = (T) combo.SelectedItem!;
+            setter(item);
+        };
+        parent.Add(comboBox);
+
+        return comboBox;
+    }
+}
+
+public enum DockPosition
+{
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+public sealed class NamedImage
+{
+    public required string Name { get; init; }
+    public required Image Image { get; init; }
+    public override string ToString() => Name;
 }
