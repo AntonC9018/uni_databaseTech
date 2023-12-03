@@ -1,12 +1,8 @@
 using System.ComponentModel;
+using Timer = System.Windows.Forms.Timer;
 
 namespace ReferatDemo;
 
-// A demo form that illustrates the following properties and methods:
-
-// BeginEdit
-// CancelEdit
-// ClearSelection
 public sealed partial class DemoForm : Form
 {
     private readonly BindingList<RowModel> _rows = new();
@@ -32,6 +28,7 @@ public sealed partial class DemoForm : Form
                 (InitializeAutoScrollDemo, "AutoScroll"),
                 (InitializeAutoSizeDemo, "AutoSize"),
                 (InitializeBackgroundDemo, "Background"),
+                (InitializeEditDemo, "Edit"),
             })
         {
             var tab = new TabPage(name);
@@ -146,7 +143,7 @@ public sealed partial class DemoForm : Form
             {
                 Dock = DockStyle.Top,
                 Text = "Scroll!",
-                Height = 50,
+                Height = _RowHeight,
             };
             top.Controls.Add(scrollButton);
 
@@ -189,6 +186,8 @@ public sealed partial class DemoForm : Form
         tab.Controls.Add(pageTable);
     }
 
+    private const int _RowHeight = 30;
+
     private void InitializeAutoSizeDemo(TabPage tab)
     {
         var dataGridView = new DataGridView
@@ -214,11 +213,11 @@ public sealed partial class DemoForm : Form
             }
 
             ComboBoxForEachEnum(
-                tab.Controls,
+                topPanel.Controls,
                 mode => dataGridView.AutoSizeColumnsMode = mode,
                 DataGridViewAutoSizeColumnsMode.AllCells);
             ComboBoxForEachEnum(
-                tab.Controls,
+                topPanel.Controls,
                 mode => dataGridView.AutoSizeRowsMode = mode,
                 DataGridViewAutoSizeRowsMode.AllCells);
         }, dataGridView);
@@ -300,6 +299,135 @@ public sealed partial class DemoForm : Form
         }, panel);
 
         tab.Controls.Add(pageTable);
+    }
+
+    private void InitializeEditDemo(TabPage tab)
+    {
+        var dataGridView = new DataGridView
+        {
+            Dock = DockStyle.Fill,
+            DataSource = _rowsBindingSource,
+        };
+
+        var pageTable = CreateLayout(topPanel =>
+        {
+            {
+                var editButton = new Button
+                {
+                    Text = "Edit",
+                    Height = _RowHeight,
+                };
+                topPanel.Controls.Add(editButton);
+                editButton.Click += (_, _) =>
+                {
+                    dataGridView.BeginEdit(selectAll: true);
+                };
+            }
+
+            {
+                var clearButton = new Button
+                {
+                    Text = "Clear Selection",
+                    Height = _RowHeight,
+                };
+                topPanel.Controls.Add(clearButton);
+                clearButton.Click += (_, _) =>
+                {
+                    dataGridView.ClearSelection();
+                };
+            }
+
+            void AddEditActionTimer(
+                string action,
+                Action actionToPerform)
+            {
+                const int timerTickInterval = 100;
+                var timer = new Timer
+                {
+                    Enabled = false,
+                    Interval = timerTickInterval,
+                };
+
+                var panel = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Top,
+                    RowCount = 1,
+                    ColumnCount = 10,
+                    Height = _RowHeight,
+                };
+                topPanel.Controls.Add(panel);
+
+                var checkBox = new CheckBox
+                {
+                    Text = action + " Timer",
+                    Checked = timer.Enabled,
+                    AutoSize = true,
+                    Height = _RowHeight,
+                };
+                panel.Controls.Add(checkBox);
+
+                var timerSelector = new NumericUpDown
+                {
+                    Minimum = 1_000,
+                    Maximum = 60_000,
+                    Value = 1_000,
+                    Increment = 500,
+                    Height = _RowHeight,
+                };
+                panel.Controls.Add(timerSelector);
+
+                var timeLeftLabel = new Label
+                {
+                    Text = "N/A",
+                    Height = _RowHeight,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                };
+                panel.Controls.Add(timeLeftLabel);
+
+                int timeLeft = 0;
+                checkBox.CheckedChanged += (_, _) =>
+                {
+                    timer.Enabled = checkBox.Checked;
+                    if (checkBox.Checked)
+                    {
+                        timeLeft = (int) timerSelector.Value;
+                        SetTimeText();
+                    }
+                    else
+                    {
+                        timeLeftLabel.Text = "N/A";
+                        timeLeft = 0;
+                    }
+                };
+
+                timer.Tick += (_, _) =>
+                {
+                    timeLeft -= timer.Interval;
+                    if (timeLeft <= 0)
+                    {
+                        actionToPerform();
+                        timeLeft = (int) timerSelector.Value;
+                    }
+
+                    SetTimeText();
+                };
+
+                void SetTimeText()
+                {
+                    var timeLeftSeconds = timeLeft / 1000;
+                    var timeLeftMilliseconds = (timeLeft % 1000) / 100;
+                    timeLeftLabel.Text = $"{timeLeftSeconds:0}:{timeLeftMilliseconds:0}";
+                }
+            }
+
+            AddEditActionTimer("Submit", () => dataGridView.EndEdit());
+            AddEditActionTimer("Cancel", () => dataGridView.CancelEdit());
+
+            // Set up two timer with text countdown, that one submits and other cancels
+        }, dataGridView);
+
+        tab.Controls.Add(pageTable);
+
     }
 
     private static TableLayoutPanel CreateLayout(
