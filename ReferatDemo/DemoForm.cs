@@ -254,7 +254,7 @@ public sealed partial class DemoForm : Form
                 topPanel.Controls.Add(colorComboBox);
                 colorComboBox.SelectedValueChanged += (_, _) =>
                 {
-                    var color = (Color)colorComboBox.SelectedItem;
+                    var color = (Color) colorComboBox.SelectedItem;
                     panel.BackColor = color;
                 };
             }
